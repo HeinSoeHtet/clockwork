@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useParams } from 'next/navigation';
+import { useEffect } from 'react';
 import { useClockwork } from '../context/ClockworkContext';
 import { ArrowLeft } from 'lucide-react';
 
@@ -23,6 +24,8 @@ export default function Header() {
                 subtitle: dateString,
                 gradient: "from-indigo-500 to-purple-600",
                 subtitleColor: "text-indigo-100",
+                themeColor: "#6366f1", // indigo-500
+                backgroundClass: "bg-indigo-500",
                 showBack: false
             };
         }
@@ -32,6 +35,8 @@ export default function Header() {
                 subtitle: `${clockworks.length} clockwork${clockworks.length !== 1 ? 's' : ''} total`,
                 gradient: "from-amber-500 to-orange-600",
                 subtitleColor: "text-amber-100",
+                themeColor: "#f59e0b", // amber-500
+                backgroundClass: "bg-amber-500",
                 showBack: false
             };
         }
@@ -41,6 +46,8 @@ export default function Header() {
                 subtitle: "Set up recurring tasks and reminders",
                 gradient: "from-emerald-500 to-teal-600",
                 subtitleColor: "text-emerald-100",
+                themeColor: "#10b981", // emerald-500
+                backgroundClass: "bg-emerald-500",
                 showBack: false
             };
         }
@@ -50,6 +57,8 @@ export default function Header() {
                 subtitle: "Your clockwork tracking journey",
                 gradient: "from-pink-500 to-rose-600",
                 subtitleColor: "text-pink-100",
+                themeColor: "#ec4899", // pink-500
+                backgroundClass: "bg-pink-500",
                 showBack: false
             };
         }
@@ -59,6 +68,8 @@ export default function Header() {
                 subtitle: null,
                 gradient: "from-blue-500 to-indigo-600",
                 subtitleColor: "text-blue-100",
+                themeColor: "#3b82f6", // blue-500
+                backgroundClass: "bg-blue-500",
                 showBack: true
             };
         }
@@ -67,10 +78,24 @@ export default function Header() {
 
     const config = getHeaderConfig();
 
+    useEffect(() => {
+        if (config?.themeColor) {
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) {
+                meta.setAttribute('content', config.themeColor);
+            } else {
+                const newMeta = document.createElement('meta');
+                newMeta.name = 'theme-color';
+                newMeta.content = config.themeColor;
+                document.head.appendChild(newMeta);
+            }
+        }
+    }, [config?.themeColor]);
+
     if (!config) return null;
 
     return (
-        <div className="sticky top-0 z-50 flex-shrink-0 bg-gray-50">
+        <div className={`sticky top-0 z-50 flex-shrink-0 ${config.backgroundClass} transition-colors duration-500`}>
             <div className="h-[env(safe-area-inset-top)]" />
             <div className={`bg-gradient-to-br ${config.gradient} relative pb-10 md:pb-6 transition-all duration-500`}>
                 <div className="max-w-md mx-auto px-4 pt-4">

@@ -55,8 +55,8 @@ export default function RootLayout({
           <ClientOnly>
 
             <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
-              <Header />
               <main className="flex-1 overflow-y-auto pb-24">
+                <Header />
                 {children}
               </main>
               <BottomNav />
