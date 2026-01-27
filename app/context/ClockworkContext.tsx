@@ -1,7 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { db, type Clockwork, initialData } from '@/lib/db';
+import { db, type Clockwork } from '@/lib/db';
+
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { createClient } from '@/lib/supabase';
@@ -11,7 +12,8 @@ export type { Clockwork };
 
 
 
-// Initial data is now handled in lib/db.ts populate event
+
+
 
 
 interface ClockworkContextType {
@@ -55,16 +57,8 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
 
 
-    // Auto-seed if empty
-    useEffect(() => {
-        const seedIfEmpty = async () => {
-            const count = await db.clockworks.count();
-            if (count === 0) {
-                await db.clockworks.bulkAdd(initialData);
-            }
-        };
-        seedIfEmpty();
-    }, []);
+
+
 
 
     // Local-first: Check for unsynced changes
