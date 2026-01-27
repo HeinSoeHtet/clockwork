@@ -4,11 +4,12 @@ import { Flame, CheckCircle2, Calendar, Bell, BellOff } from 'lucide-react';
 interface ClockworkCardProps {
     clockwork: Clockwork;
     onComplete: (id: string) => void;
+    onSkip: (id: string) => void;
     onDelete?: (id: string) => void;
     isOverdue?: boolean;
 }
 
-export default function ClockworkCard({ clockwork, onComplete, isOverdue }: ClockworkCardProps) {
+export default function ClockworkCard({ clockwork, onComplete, onSkip, isOverdue }: ClockworkCardProps) {
     const today = new Date().toISOString().split('T')[0];
     const isCompletedToday = clockwork.lastCompleted === today;
 
@@ -86,16 +87,24 @@ export default function ClockworkCard({ clockwork, onComplete, isOverdue }: Cloc
 
                         {/* Complete Button */}
                         {!isCompletedToday ? (
-                            <button
-                                onClick={() => onComplete(clockwork.id)}
-                                className="w-full py-2.5 rounded-xl font-medium text-sm transition-all active:scale-95"
-                                style={{
-                                    backgroundColor: clockwork.color,
-                                    color: 'white'
-                                }}
-                            >
-                                Mark as Complete
-                            </button>
+                            <div className="flex flex-col gap-2">
+                                <button
+                                    onClick={() => onComplete(clockwork.id)}
+                                    className="w-full py-2.5 rounded-xl font-medium text-sm transition-all active:scale-95"
+                                    style={{
+                                        backgroundColor: clockwork.color,
+                                        color: 'white'
+                                    }}
+                                >
+                                    Mark as Complete
+                                </button>
+                                <button
+                                    onClick={() => onSkip(clockwork.id)}
+                                    className="w-full py-2.5 rounded-xl font-medium text-sm transition-all active:scale-95 border border-gray-100 text-gray-600 hover:bg-gray-50"
+                                >
+                                    Skip for Now
+                                </button>
+                            </div>
                         ) : (
                             <div
                                 className="w-full py-2.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2"

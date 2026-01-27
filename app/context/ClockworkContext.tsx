@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { db, type Clockwork } from '@/lib/db';
 
 
@@ -9,12 +9,6 @@ import { createClient } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 
 export type { Clockwork };
-
-
-
-
-
-
 
 interface ClockworkContextType {
     clockworks: Clockwork[];
@@ -26,6 +20,9 @@ interface ClockworkContextType {
     signInWithGoogle: () => Promise<void>;
     signOut: () => Promise<void>;
     syncWithCloud: () => Promise<void>;
+    requestNotificationPermission: () => Promise<boolean>;
+    sendLocalNotification: (title: string, body: string, tag?: string) => void;
+
 
     addClockwork: (clockwork: Omit<Clockwork, 'id' | 'lastCompleted' | 'streak' | 'completedDates' | 'synced'>) => void;
 
@@ -48,13 +45,167 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
     const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
     const supabase = createClient();
 
-    // Load lastSyncTime from localStorage on mount
     useEffect(() => {
         const savedTime = localStorage.getItem('lastSyncTime');
         if (savedTime) setLastSyncTime(savedTime);
     }, []);
 
+    const requestNotificationPermission = async () => {
+        if (!('Notification' in window)) {
+            console.log('This browser does not support notifications');
+            return false;
+        }
 
+        const permission = await Notification.requestPermission();
+        return permission === 'granted';
+    };
+
+    const completeClockwork = useCallback(async (id: string) => {
+        const clockwork = await db.clockworks.get(id);
+        if (!clockwork) return;
+
+        const today = new Date().toISOString().split('T')[0];
+        const newCompletedDates = [today, ...clockwork.completedDates];
+        const newStreak = clockwork.streak + 1;
+        const nextDue = calculateNextDue(today, clockwork.frequency);
+
+        await db.clockworks.update(id, {
+            lastCompleted: today,
+            completedDates: newCompletedDates,
+            streak: newStreak,
+            nextDue,
+            synced: false
+        });
+    }, []);
+
+    const skipClockwork = useCallback(async (id: string) => {
+        const clockwork = await db.clockworks.get(id);
+        if (!clockwork) return;
+
+        const today = new Date().toISOString().split('T')[0];
+        const newSkippedDates = [today, ...clockwork.skippedDates];
+        const nextDue = calculateNextDue(today, clockwork.frequency);
+
+        await db.clockworks.update(id, {
+            skippedDates: newSkippedDates,
+            nextDue,
+            synced: false
+        });
+    }, []);
+
+    const sendLocalNotification = (title: string, body: string, tag?: string) => {
+        if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+        const clockworkId = tag?.replace('clockwork-', '');
+
+        const options = {
+            body,
+            icon: '/icon.png',
+            badge: '/icon.png',
+            tag: tag || 'clockwork-reminder',
+            actions: [
+                { action: 'complete', title: 'Mark as Complete' },
+                { action: 'skip', title: 'Skip for Now' }
+            ],
+            vibrate: [100, 50, 100],
+            data: {
+                url: window.location.origin + '/today',
+                clockworkId: clockworkId
+            }
+        } as any;
+
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.ready.then((registration) => {
+                registration.showNotification(title, options);
+            });
+        } else {
+            new Notification(title, options);
+        }
+    };
+
+    const clearNotifications = () => {
+        if (!('Notification' in window)) return;
+
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.ready.then((registration) => {
+                registration.getNotifications().then((notifications) => {
+                    notifications.forEach(n => {
+                        if (n.tag === 'clockwork-reminder' || n.tag?.startsWith('clockwork-')) {
+                            n.close();
+                        }
+                    });
+                });
+            });
+        }
+    };
+
+    // Periodic reminder check
+    useEffect(() => {
+        const checkReminders = () => {
+            const now = new Date();
+            const todayStr = now.toISOString().split('T')[0];
+
+            // Only notify if it's a reasonable hour (e.g., after 8 AM)
+            if (now.getHours() < 8) return;
+
+            const dueItems = clockworks.filter(c =>
+                c.remindersEnabled &&
+                c.nextDue === todayStr
+            );
+
+            if (dueItems.length > 0) {
+                const lastNotified = localStorage.getItem('lastNotificationTimestamp');
+                const fourHoursInMs = 4 * 60 * 60 * 1000;
+
+                const shouldNotify = !lastNotified || (now.getTime() - parseInt(lastNotified)) >= fourHoursInMs;
+
+                if (shouldNotify) {
+                    dueItems.forEach(item => {
+                        sendLocalNotification(
+                            `${item.icon} ${item.name}`,
+                            `It's time for your ${item.frequency} routine!`,
+                            `clockwork-${item.id}`
+                        );
+                    });
+                    localStorage.setItem('lastNotificationTimestamp', now.getTime().toString());
+                }
+            } else {
+                // If nothing due, clear existing reminder
+                clearNotifications();
+                localStorage.removeItem('lastNotificationTimestamp');
+            }
+        };
+
+        // Check every 1 hour to catch the 4-hour window accurately
+        const interval = setInterval(checkReminders, 1000 * 60 * 60);
+        checkReminders(); // Initial check
+
+        return () => clearInterval(interval);
+    }, [clockworks]);
+    // Auto-miss overdue items
+    useEffect(() => {
+        const handleAutoMiss = async () => {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const overdue = clockworks.filter(c => c.nextDue < todayStr);
+
+            if (overdue.length > 0) {
+                for (const item of overdue) {
+                    console.log(`⏰ Auto-missing overdue task: ${item.name}`);
+                    const newMissedDates = [item.nextDue, ...item.missedDates];
+                    const newNextDue = calculateNextDue(item.nextDue, item.frequency);
+
+                    await db.clockworks.update(item.id, {
+                        missedDates: newMissedDates,
+                        streak: 0,
+                        nextDue: newNextDue,
+                        synced: false
+                    });
+                }
+            }
+        };
+
+        handleAutoMiss();
+    }, [clockworks]);
 
 
 
@@ -72,6 +223,17 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
     // Removed auto-sync trigger to allow manual sync only
 
+
+    // Handle notification actions (logging/focus)
+    useEffect(() => {
+        const messageListener = (event: MessageEvent) => {
+            if (event.data?.type === 'CLOCKWORK_ACTION') {
+                console.log(`🔔 Notification Action Background update noticed: ${event.data.action}`);
+            }
+        };
+        navigator.serviceWorker?.addEventListener('message', messageListener);
+        return () => navigator.serviceWorker?.removeEventListener('message', messageListener);
+    }, []);
 
     const syncWithCloud = async () => {
         if (isSyncing) return;
@@ -176,23 +338,6 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         await db.clockworks.add(newClockwork);
     };
 
-    const completeClockwork = async (id: string) => {
-        const clockwork = await db.clockworks.get(id);
-        if (!clockwork) return;
-
-        const today = new Date().toISOString().split('T')[0];
-        const newCompletedDates = [today, ...clockwork.completedDates];
-        const newStreak = clockwork.streak + 1;
-        const nextDue = calculateNextDue(today, clockwork.frequency);
-
-        await db.clockworks.update(id, {
-            lastCompleted: today,
-            completedDates: newCompletedDates,
-            streak: newStreak,
-            nextDue,
-            synced: false
-        });
-    };
 
     const deleteClockwork = async (id: string) => {
         const clockwork = await db.clockworks.get(id);
@@ -203,30 +348,18 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         await db.clockworks.delete(id);
     };
 
-    const skipClockwork = async (id: string) => {
-        const clockwork = await db.clockworks.get(id);
-        if (!clockwork) return;
-
-        const today = new Date().toISOString().split('T')[0];
-        const newSkippedDates = [today, ...clockwork.skippedDates];
-        const nextDue = calculateNextDue(today, clockwork.frequency);
-
-        await db.clockworks.update(id, {
-            skippedDates: newSkippedDates,
-            nextDue,
-            synced: false
-        });
-    };
 
     const missClockwork = async (id: string, missDate: string) => {
         const clockwork = await db.clockworks.get(id);
         if (!clockwork) return;
 
         const newMissedDates = [missDate, ...clockwork.missedDates];
+        const nextDue = calculateNextDue(missDate, clockwork.frequency);
 
         await db.clockworks.update(id, {
             missedDates: newMissedDates,
             streak: 0,
+            nextDue,
             synced: false
         });
     };
@@ -248,6 +381,9 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             signInWithGoogle,
             signOut,
             syncWithCloud,
+            requestNotificationPermission,
+            sendLocalNotification,
+
 
             addClockwork,
 

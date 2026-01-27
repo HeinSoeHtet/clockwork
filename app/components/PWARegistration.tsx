@@ -8,20 +8,6 @@ export default function PWARegistration() {
     const [showInstallDialog, setShowInstallDialog] = useState(false);
 
     useEffect(() => {
-        // Register Service Worker
-        if ('serviceWorker' in navigator && window.self === window.top) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').then(
-                    (registration) => {
-                        console.log('SW registered: ', registration);
-                    },
-                    (registrationError) => {
-                        console.log('SW registration failed: ', registrationError);
-                    }
-                );
-            });
-        }
-
         // Handle Install Prompt
         const handleBeforeInstallPrompt = (e: any) => {
             // Prevent the mini-infobar from appearing on mobile

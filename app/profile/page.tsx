@@ -1,11 +1,40 @@
 "use client";
 
 import { useClockwork } from '../context/ClockworkContext';
-import { Calendar, TrendingUp, Zap, User, LogOut, CloudSync, CloudCheck, CloudOff } from 'lucide-react';
+import { Calendar, TrendingUp, Zap, User, LogOut, CloudSync, CloudCheck, CloudOff, Bell, BellOff, BellRing } from 'lucide-react';
+import { useState, useEffect } from 'react';
+
 
 
 export default function Profile() {
-    const { clockworks, user, loading, isSyncing, syncWithCloud, signInWithGoogle, signOut } = useClockwork();
+    const {
+        clockworks,
+        user,
+        loading,
+        isSyncing,
+        syncWithCloud,
+        signInWithGoogle,
+        signOut,
+        requestNotificationPermission
+    } = useClockwork();
+
+    const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'default'>('default');
+
+    useEffect(() => {
+        if ('Notification' in window) {
+            setNotificationStatus(Notification.permission);
+        }
+    }, []);
+
+    const handleRequestPermission = async () => {
+        const granted = await requestNotificationPermission();
+        if (granted) {
+            setNotificationStatus('granted');
+        } else {
+            setNotificationStatus('denied');
+        }
+    };
+
 
 
     const totalClockworks = clockworks.length;
@@ -142,6 +171,41 @@ export default function Profile() {
                 </div>
             )}
 
+
+            {/* Notification Status */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm mb-6 flex items-center justify-between border border-gray-100">
+                <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-xl ${notificationStatus === 'granted' ? 'bg-green-50' : notificationStatus === 'denied' ? 'bg-red-50' : 'bg-blue-50'}`}>
+                        {notificationStatus === 'granted' ? (
+                            <BellRing className="w-5 h-5 text-green-600" />
+                        ) : notificationStatus === 'denied' ? (
+                            <BellOff className="w-5 h-5 text-red-500" />
+                        ) : (
+                            <Bell className="w-5 h-5 text-blue-500" />
+                        )}
+                    </div>
+                    <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                            {notificationStatus === 'granted' ? 'Notifications Active' : 'Enable Reminders'}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                            {notificationStatus === 'granted'
+                                ? 'You will receive morning alerts for due tasks'
+                                : notificationStatus === 'denied'
+                                    ? 'Permission was denied. Enable in browser settings'
+                                    : 'Get push-style notifications on your device'}
+                        </p>
+                    </div>
+                </div>
+                {notificationStatus === 'default' && (
+                    <button
+                        onClick={handleRequestPermission}
+                        className="text-xs font-semibold text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-blue-100"
+                    >
+                        Enable
+                    </button>
+                )}
+            </div>
 
             {/* Stats Grid */}
             <div className="grid grid-cols-3 gap-3 mb-6">

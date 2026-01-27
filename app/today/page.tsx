@@ -2,7 +2,9 @@
 
 import { useClockwork } from '../context/ClockworkContext';
 import ClockworkCard from '../components/ClockworkCard';
-import { Calendar, CloudSync, CloudCheck, AlertCircle, CloudOff } from 'lucide-react';
+import { Calendar, CloudSync, CloudCheck, AlertCircle, CloudOff, Bell, BellRing } from 'lucide-react';
+import { useState, useEffect } from 'react';
+
 
 
 export default function TodayPage() {
@@ -14,8 +16,24 @@ export default function TodayPage() {
         isSyncing,
         hasUnsyncedChanges,
         lastSyncTime,
-        syncWithCloud
+        syncWithCloud,
+        skipClockwork,
+        requestNotificationPermission
     } = useClockwork();
+
+    const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'default'>('default');
+
+    useEffect(() => {
+        if ('Notification' in window) {
+            setNotificationStatus(Notification.permission);
+        }
+    }, []);
+
+    const handleRequestPermission = async () => {
+        const granted = await requestNotificationPermission();
+        setNotificationStatus(granted ? 'granted' : 'denied');
+    };
+
     const today = new Date().toISOString().split('T')[0];
 
     const dueToday = clockworks.filter(c => c.nextDue === today);
@@ -30,6 +48,29 @@ export default function TodayPage() {
 
     return (
         <div className="max-w-md mx-auto px-4 py-4">
+            {/* Notification Prompt */}
+            {clockworks.length > 0 && notificationStatus === 'default' && (
+                <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl p-4 shadow-lg mb-6 text-white animate-in fade-in slide-in-from-top-4 duration-500">
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-white/20 rounded-xl">
+                                <BellRing className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold">Never miss a beat</p>
+                                <p className="text-[10px] text-blue-100 uppercase tracking-wider font-semibold">Enable morning reminders</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={handleRequestPermission}
+                            className="bg-white text-blue-600 px-4 py-2 rounded-xl text-xs font-bold shadow-sm hover:bg-blue-50 transition-colors active:scale-95"
+                        >
+                            Enable
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Sync Header */}
             {clockworks.length > 0 && (
                 <div className="bg-white rounded-2xl p-4 shadow-sm mb-6 border border-gray-100">
@@ -83,6 +124,7 @@ export default function TodayPage() {
                                 key={clockwork.id}
                                 clockwork={clockwork}
                                 onComplete={completeClockwork}
+                                onSkip={skipClockwork}
                                 onDelete={deleteClockwork}
                                 isOverdue={true}
                             />
@@ -104,6 +146,7 @@ export default function TodayPage() {
                                 key={clockwork.id}
                                 clockwork={clockwork}
                                 onComplete={completeClockwork}
+                                onSkip={skipClockwork}
                                 onDelete={deleteClockwork}
                             />
                         ))}
