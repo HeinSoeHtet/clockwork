@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:pwa": "ENABLE_PWA_DEV=true next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "dev:pwa": "ENABLE_PWA_DEV=true next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint"
   },
