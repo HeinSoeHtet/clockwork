@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🕰️ Clockwork
 
-## Getting Started
+**Clockwork** is a premium, local-first task tracking application designed for recurring routines. Built with a "Privacy First, Cloud Second" philosophy, it ensures your data is always available on your device while offering seamless cloud synchronization.
 
-First, run the development server:
+## ✨ Key Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+-   **Offline First**: Uses IndexedDB (via Dexie.js) to ensure the app works instantly, even without an internet connection.
+-   **Cloud Sync**: Optional Google-powered synchronization with Supabase. Backup your data and access it across devices.
+-   **Progressive Web App (PWA)**: Installable on iOS, Android, and Desktop. Supports offline caching and a native app experience.
+-   **Streak Tracking**: Gamified task completion system to help you maintain your habits.
+-   **Manual Control**: Full transparency over data synchronization with a dedicated "Sync Now" interface.
+-   **Modern Design**: Sleek, responsive UI built with Tailwind CSS and Lucide icons.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🚀 Getting Started
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Prerequisites
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+-   Node.js 18.x or later
+-   A Supabase Project (for cloud sync)
 
-## Learn More
+### Installation
 
-To learn more about Next.js, take a look at the following resources:
+1.  **Clone the repository**:
+    ```bash
+    git clone https://github.com/HeinSoeHtet/clockwork.git
+    cd clockwork
+    ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+2.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+3.  **Set up Environment Variables**:
+    Create a `.env.local` file in the root directory:
+    ```env
+    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+    ```
 
-## Deploy on Vercel
+4.  **Run the development server**:
+    ```bash
+    npm run dev
+    ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🛠️ Tech Stack
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+-   **Framework**: [Next.js 15+](https://nextjs.org/) (App Router)
+-   **Local Database**: [Dexie.js](https://dexie.org/) (IndexedDB wrapper)
+-   **Backend/Auth**: [Supabase](https://supabase.com/)
+-   **Icons**: [Lucide React](https://lucide.dev/)
+-   **PWA**: Standard Web Manifest + Custom Service Worker
+
+## 🏗️ Architecture
+
+-   **State Management**: Centralized via `ClockworkContext.tsx`. This provider handles all database operations and authentication states.
+-   **Data Flow**:
+    1. User modifies data -> Updates **Local IndexedDB** immediately.
+    2. App flags record as `synced: false`.
+    3. User clicks "Sync Now" -> Authenticated `upsert` to **Supabase**.
+    4. Local records marked as `synced: true` upon success.
+-   **PWA Installation**: Custom installation dialog implemented in `PWARegistration.tsx` to provide a premium onboarding experience on compatible browsers.
+
+## 🔐 Security
+
+-   **Row Level Security (RLS)**: Enforced on the Supabase `clockworks` table to ensure users can only access their own data.
+-   **Validation**: Character limits (50 for names, 500 for notes) enforced on both the UI and logic layers.
+-   **Service Worker**: Implements a **Stale-While-Revalidate** strategy for safe and fast updates.
+
+---
+
+Built with ❤️ by the Clockwork Team.
