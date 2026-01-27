@@ -31,41 +31,44 @@ export default function TodayPage() {
     return (
         <div className="max-w-md mx-auto px-4 py-4">
             {/* Sync Header */}
-            <div className="bg-white rounded-2xl p-4 shadow-sm mb-6 border border-gray-100">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-xl ${!user ? 'bg-blue-50' : isSyncing ? 'bg-indigo-50' : hasUnsyncedChanges ? 'bg-amber-50' : 'bg-green-50'}`}>
-                            {!user ? (
-                                <CloudOff className="w-5 h-5 text-blue-500" />
-                            ) : isSyncing ? (
-                                <CloudSync className="w-5 h-5 text-indigo-600 animate-spin" />
-                            ) : hasUnsyncedChanges ? (
-                                <AlertCircle className="w-5 h-5 text-amber-500" />
-                            ) : (
-                                <CloudCheck className="w-5 h-5 text-green-600" />
-                            )}
+            {clockworks.length > 0 && (
+                <div className="bg-white rounded-2xl p-4 shadow-sm mb-6 border border-gray-100">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-xl ${!user ? 'bg-blue-50' : isSyncing ? 'bg-indigo-50' : hasUnsyncedChanges ? 'bg-amber-50' : 'bg-green-50'}`}>
+                                {!user ? (
+                                    <CloudOff className="w-5 h-5 text-blue-500" />
+                                ) : isSyncing ? (
+                                    <CloudSync className="w-5 h-5 text-indigo-600 animate-spin" />
+                                ) : hasUnsyncedChanges ? (
+                                    <AlertCircle className="w-5 h-5 text-amber-500" />
+                                ) : (
+                                    <CloudCheck className="w-5 h-5 text-green-600" />
+                                )}
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-gray-900">
+                                    {!user ? 'Cloud Sync' : isSyncing ? 'Syncing...' : hasUnsyncedChanges ? 'Unsynced changes' : 'All caught up'}
+                                </p>
+                                <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
+                                    {!user ? 'Sign in to backup data' : formatSyncTime(lastSyncTime)}
+                                </p>
+                            </div>
                         </div>
-                        <div>
-                            <p className="text-sm font-semibold text-gray-900">
-                                {!user ? 'Cloud Sync' : isSyncing ? 'Syncing...' : hasUnsyncedChanges ? 'Unsynced changes' : 'All caught up'}
-                            </p>
-                            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
-                                {!user ? 'Sign in to backup data' : formatSyncTime(lastSyncTime)}
-                            </p>
-                        </div>
+                        <button
+                            onClick={() => syncWithCloud()}
+                            disabled={!!isSyncing || !!(user && !hasUnsyncedChanges)}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${(user && !hasUnsyncedChanges)
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : 'bg-indigo-600 text-white shadow-md shadow-indigo-200 hover:bg-indigo-700'
+                                }`}
+                        >
+                            {isSyncing ? 'Syncing...' : !user ? 'Sign in to Sync' : 'Sync Now'}
+                        </button>
                     </div>
-                    <button
-                        onClick={() => syncWithCloud()}
-                        disabled={!!isSyncing || !!(user && !hasUnsyncedChanges)}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${(user && !hasUnsyncedChanges)
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            : 'bg-indigo-600 text-white shadow-md shadow-indigo-200 hover:bg-indigo-700'
-                            }`}
-                    >
-                        {isSyncing ? 'Syncing...' : !user ? 'Sign in to Sync' : 'Sync Now'}
-                    </button>
                 </div>
-            </div>
+            )}
+
 
             {/* Overdue */}
             {overdue.length > 0 && (
