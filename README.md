@@ -7,8 +7,9 @@
 -   **Offline First**: Uses IndexedDB (via Dexie.js) to ensure the app works instantly, even without an internet connection.
 -   **Cloud Sync**: Optional Google-powered synchronization with Supabase. Backup your data and access it across devices.
 -   **Progressive Web App (PWA)**: Installable on iOS, Android, and Desktop. Supports offline caching and a native app experience.
--   **Streak Tracking**: Gamified task completion system to help you maintain your habits.
--   **Manual Control**: Full transparency over data synchronization with a dedicated "Sync Now" interface.
+-   **Streak Tracking**: Gamified task completion system with auto-miss logic for overdue tasks.
+-   **Local Notifications**: Privacy-respecting browser notifications for daily routines.
+-   **Manual Control**: Seamless cloud synchronization triggered from the Today dashboard.
 -   **Modern Design**: Sleek, responsive UI built with Tailwind CSS and Lucide icons.
 
 ## 🚀 Getting Started
@@ -59,7 +60,8 @@
     2. App flags record as `synced: false`.
     3. User clicks "Sync Now" -> Authenticated `upsert` to **Supabase**.
     4. Local records marked as `synced: true` upon success.
--   **PWA Installation**: Custom installation dialog implemented in `PWARegistration.tsx` to provide a premium onboarding experience on compatible browsers.
+-   **PWA Installation**: Custom installation dialog implemented in `PWARegistration.tsx` providing a premium onboarding experience.
+-   **Auto-Miss Logic**: Overdue tasks are automatically identified and rotated, resetting streaks to ensure accurate habit tracking.
 
 ## 🔐 Security
 
