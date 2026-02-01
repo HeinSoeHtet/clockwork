@@ -17,6 +17,7 @@ export interface Clockwork {
     endDate: string | null;
     notes?: string;
     synced: boolean;
+    dueDateOffset: number;
 }
 
 export class MyDatabase extends Dexie {
@@ -24,7 +25,7 @@ export class MyDatabase extends Dexie {
 
     constructor() {
         super('ClockworkDB');
-        this.version(2).stores({
+        this.version(3).stores({
             clockworks: 'id, name, frequency, nextDue, synced'
         });
     }

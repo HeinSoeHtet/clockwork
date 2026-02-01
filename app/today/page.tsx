@@ -1,6 +1,6 @@
 "use client";
 
-import { useClockwork } from '../context/ClockworkContext';
+import { useClockwork, getEffectiveNextDue } from '../context/ClockworkContext';
 import ClockworkCard from '../components/ClockworkCard';
 import { Calendar, CloudSync, CloudCheck, AlertCircle, CloudOff, Bell, BellRing } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -36,8 +36,8 @@ export default function TodayPage() {
 
     const today = new Date().toISOString().split('T')[0];
 
-    const dueToday = clockworks.filter(c => c.nextDue === today);
-    const overdue = clockworks.filter(c => c.nextDue < today);
+    const dueToday = clockworks.filter(c => getEffectiveNextDue(c) === today);
+    const overdue = clockworks.filter(c => getEffectiveNextDue(c) < today);
     const totalDueToday = dueToday.length + overdue.length;
 
     const formatSyncTime = (time: string | null) => {

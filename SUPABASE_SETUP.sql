@@ -18,6 +18,7 @@ create table clockworks (
   "startDate" text not null,
   "endDate" text,
   "notes" text,
+  "dueDateOffset" integer not null default 0,
   "created_at" timestamp with time zone default timezone('utc'::text, now()) not null
 );
 

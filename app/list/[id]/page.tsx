@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { useClockwork } from '../../context/ClockworkContext';
+import { useClockwork, getEffectiveNextDue } from '../../context/ClockworkContext';
 import { Bell, BellOff, Flame, Trash2, CheckCircle2, XCircle, SkipForward, Plus } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 
@@ -38,6 +38,8 @@ export default function ClockworkDetail() {
             </div>
         );
     }
+
+    const effectiveDue = getEffectiveNextDue(clockwork);
 
     const frequencyLabels = {
         daily: 'Daily',
@@ -138,16 +140,21 @@ export default function ClockworkDetail() {
                 <div className="space-y-3">
                     <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-600">Next Due Date</span>
-                        <span className="text-sm font-semibold text-gray-900">
-                            {new Date(clockwork.nextDue).toLocaleDateString('en-US', {
+                        <span className="text-sm font-semibold text-gray-900 text-right">
+                            {new Date(effectiveDue).toLocaleDateString('en-US', {
                                 month: 'short', day: 'numeric', year: 'numeric'
                             })}
+                            {clockwork.dueDateOffset !== 0 && (
+                                <span className="text-[10px] text-indigo-500 block font-normal">
+                                    Shifted by {clockwork.dueDateOffset}d
+                                </span>
+                            )}
                         </span>
                     </div>
                     <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-600">Status</span>
-                        <span className={`text-sm font-semibold ${clockwork.nextDue < today ? 'text-red-600' : clockwork.nextDue === today ? 'text-indigo-600' : 'text-gray-600'}`}>
-                            {getDaysUntil(clockwork.nextDue)}
+                        <span className={`text-sm font-semibold ${effectiveDue < today ? 'text-red-600' : effectiveDue === today ? 'text-indigo-600' : 'text-gray-600'}`}>
+                            {getDaysUntil(effectiveDue)}
                         </span>
                     </div>
                 </div>

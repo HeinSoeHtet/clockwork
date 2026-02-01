@@ -1,4 +1,4 @@
-import { Clockwork } from '../context/ClockworkContext';
+import { Clockwork, useClockwork, getEffectiveNextDue } from '../context/ClockworkContext';
 import { Flame, CheckCircle2, Calendar, Bell, BellOff } from 'lucide-react';
 
 interface ClockworkCardProps {
@@ -10,8 +10,10 @@ interface ClockworkCardProps {
 }
 
 export default function ClockworkCard({ clockwork, onComplete, onSkip, isOverdue }: ClockworkCardProps) {
+    const { shiftClockwork } = useClockwork();
     const today = new Date().toISOString().split('T')[0];
     const isCompletedToday = clockwork.lastCompleted === today;
+    const effectiveDue = getEffectiveNextDue(clockwork);
 
     const frequencyLabels = {
         daily: 'Daily',
@@ -71,7 +73,7 @@ export default function ClockworkCard({ clockwork, onComplete, onSkip, isOverdue
                                 className={`text-xs font-medium ${isOverdue ? 'text-red-600' : 'text-indigo-600'
                                     }`}
                             >
-                                {getDaysUntil(clockwork.nextDue)}
+                                {getDaysUntil(effectiveDue)}
                             </span>
                             {clockwork.streak > 0 && (
                                 <div className="flex items-center gap-1">
@@ -98,12 +100,21 @@ export default function ClockworkCard({ clockwork, onComplete, onSkip, isOverdue
                                 >
                                     Mark as Complete
                                 </button>
-                                <button
-                                    onClick={() => onSkip(clockwork.id)}
-                                    className="w-full py-2.5 rounded-xl font-medium text-sm transition-all active:scale-95 border border-gray-100 text-gray-600 hover:bg-gray-50"
-                                >
-                                    Skip for Now
-                                </button>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => onSkip(clockwork.id)}
+                                        className="flex-1 py-2.5 rounded-xl font-medium text-sm transition-all active:scale-95 border border-gray-100 text-gray-600 hover:bg-gray-50"
+                                    >
+                                        Skip
+                                    </button>
+                                    <button
+                                        onClick={() => shiftClockwork(clockwork.id, 1)}
+                                        className="flex-1 py-2.5 rounded-xl font-medium text-sm transition-all active:scale-95 border border-indigo-100 text-indigo-600 hover:bg-indigo-50 flex items-center justify-center"
+                                        title="Shift forward by 1 day"
+                                    >
+                                        Shift 1 Day
+                                    </button>
+                                </div>
                             </div>
                         ) : (
                             <div

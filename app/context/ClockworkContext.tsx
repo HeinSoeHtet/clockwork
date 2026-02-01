@@ -32,6 +32,7 @@ interface ClockworkContextType {
     skipClockwork: (id: string) => void;
     missClockwork: (id: string, missDate: string) => void;
     updateClockwork: (id: string, updates: Partial<Clockwork>) => void;
+    shiftClockwork: (id: string, days: number) => void;
 }
 
 
@@ -67,13 +68,15 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         const today = new Date().toISOString().split('T')[0];
         const newCompletedDates = [today, ...clockwork.completedDates];
         const newStreak = clockwork.streak + 1;
-        const nextDue = calculateNextDue(today, clockwork.frequency);
+        // Maintain sequence by calculating from original nextDue, not today
+        const nextDue = calculateNextDue(clockwork.nextDue, clockwork.frequency);
 
         await db.clockworks.update(id, {
             lastCompleted: today,
             completedDates: newCompletedDates,
             streak: newStreak,
             nextDue,
+            dueDateOffset: 0,
             synced: false
         });
     }, []);
@@ -84,11 +87,13 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
         const today = new Date().toISOString().split('T')[0];
         const newSkippedDates = [today, ...clockwork.skippedDates];
-        const nextDue = calculateNextDue(today, clockwork.frequency);
+        // Maintain sequence by calculating from original nextDue
+        const nextDue = calculateNextDue(clockwork.nextDue, clockwork.frequency);
 
         await db.clockworks.update(id, {
             skippedDates: newSkippedDates,
             nextDue,
+            dueDateOffset: 0,
             synced: false
         });
     }, []);
@@ -148,10 +153,10 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             // Only notify if it's a reasonable hour (e.g., after 8 AM)
             if (now.getHours() < 8) return;
 
-            const dueItems = clockworks.filter(c =>
-                c.remindersEnabled &&
-                c.nextDue === todayStr
-            );
+            const dueItems = clockworks.filter(c => {
+                const effectiveDue = getEffectiveNextDue(c);
+                return c.remindersEnabled && effectiveDue === todayStr;
+            });
 
             if (dueItems.length > 0) {
                 const lastNotified = localStorage.getItem('lastNotificationTimestamp');
@@ -198,6 +203,7 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
                         missedDates: newMissedDates,
                         streak: 0,
                         nextDue: newNextDue,
+                        dueDateOffset: 0,
                         synced: false
                     });
                 }
@@ -333,6 +339,7 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             completedDates: [],
             missedDates: [],
             skippedDates: [],
+            dueDateOffset: 0,
             synced: false
         };
         await db.clockworks.add(newClockwork);
@@ -360,9 +367,20 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             missedDates: newMissedDates,
             streak: 0,
             nextDue,
+            dueDateOffset: 0,
             synced: false
         });
     };
+
+    const shiftClockwork = useCallback(async (id: string, days: number) => {
+        const clockwork = await db.clockworks.get(id);
+        if (!clockwork) return;
+
+        await db.clockworks.update(id, {
+            dueDateOffset: (clockwork.dueDateOffset || 0) + days,
+            synced: false
+        });
+    }, []);
 
     const updateClockwork = async (id: string, updates: Partial<Clockwork>) => {
         await db.clockworks.update(id, { ...updates, synced: false });
@@ -391,7 +409,8 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             deleteClockwork,
             skipClockwork,
             missClockwork,
-            updateClockwork
+            updateClockwork,
+            shiftClockwork
         }}>
             {children}
         </ClockworkContext.Provider>
@@ -417,5 +436,13 @@ function calculateNextDue(completedDate: string, frequency: Clockwork['frequency
         case 'biweekly': date.setDate(date.getDate() + 14); break;
         case 'monthly': date.setMonth(date.getMonth() + 1); break;
     }
+    return date.toISOString().split('T')[0];
+}
+
+export function getEffectiveNextDue(clockwork: Clockwork): string {
+    if (!clockwork.dueDateOffset) return clockwork.nextDue;
+
+    const date = new Date(clockwork.nextDue);
+    date.setDate(date.getDate() + clockwork.dueDateOffset);
     return date.toISOString().split('T')[0];
 }
