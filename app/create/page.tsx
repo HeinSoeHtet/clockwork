@@ -51,11 +51,8 @@ export default function CreateClockwork() {
                 nextDue: startDate,
                 remindersEnabled,
                 notes: trimmedNotes || undefined,
-
                 startDate,
-                endDate: hasEndDate && endDate ? endDate : null,
-                missedDates: [],
-                skippedDates: []
+                endDate: hasEndDate && endDate ? endDate : null
             });
 
             router.push('/today');

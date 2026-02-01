@@ -24,7 +24,7 @@ interface ClockworkContextType {
     sendLocalNotification: (title: string, body: string, tag?: string) => void;
 
 
-    addClockwork: (clockwork: Omit<Clockwork, 'id' | 'lastCompleted' | 'streak' | 'completedDates' | 'synced'>) => void;
+    addClockwork: (clockwork: Omit<Clockwork, 'id' | 'lastCompleted' | 'streak' | 'completedDates' | 'missedDates' | 'skippedDates' | 'synced' | 'dueDateOffset'>) => void;
 
 
     completeClockwork: (id: string) => void;
@@ -329,7 +329,7 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
     };
 
 
-    const addClockwork = async (clockwork: Omit<Clockwork, 'id' | 'lastCompleted' | 'streak' | 'completedDates' | 'synced'>) => {
+    const addClockwork = async (clockwork: Omit<Clockwork, 'id' | 'lastCompleted' | 'streak' | 'completedDates' | 'missedDates' | 'skippedDates' | 'synced' | 'dueDateOffset'>) => {
 
         const newClockwork: Clockwork = {
             ...clockwork,
