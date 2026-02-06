@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useClockwork, getEffectiveNextDue } from '../../context/ClockworkContext';
-import { Bell, BellOff, Flame, Trash2, CheckCircle2, XCircle, SkipForward, Plus } from 'lucide-react';
+import { Bell, BellOff, Flame, Trash2, CheckCircle2, XCircle, SkipForward, Plus, Edit2, Check } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 
 type HistoryEntry = {
@@ -11,7 +11,7 @@ type HistoryEntry = {
 };
 
 export default function ClockworkDetail() {
-    const { clockworks, deleteClockwork, missClockwork } = useClockwork();
+    const { clockworks, deleteClockwork, missClockwork, updateClockwork } = useClockwork();
     const router = useRouter();
     const params = useParams();
     const id = params.id as string;
@@ -20,6 +20,10 @@ export default function ClockworkDetail() {
 
     const [showAddMissModal, setShowAddMissModal] = useState(false);
     const [missDate, setMissDate] = useState('');
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [editedName, setEditedName] = useState('');
+    const [isEditingNotes, setIsEditingNotes] = useState(false);
+    const [editedNotes, setEditedNotes] = useState('');
 
     const today = new Date().toISOString().split('T')[0];
 
@@ -76,6 +80,20 @@ export default function ClockworkDetail() {
         }
     };
 
+    const handleSaveName = () => {
+        if (editedName.trim() && editedName !== clockwork.name) {
+            updateClockwork(clockwork.id, { name: editedName.trim() });
+        }
+        setIsEditingName(false);
+    };
+
+    const handleSaveNotes = () => {
+        if (editedNotes !== clockwork.notes) {
+            updateClockwork(clockwork.id, { notes: editedNotes.trim() });
+        }
+        setIsEditingNotes(false);
+    };
+
     const history: HistoryEntry[] = [
         ...clockwork.completedDates.map(date => ({ date, status: 'completed' as const })),
         ...clockwork.skippedDates.map(date => ({ date, status: 'skipped' as const })),
@@ -101,8 +119,33 @@ export default function ClockworkDetail() {
                     >
                         {clockwork.icon}
                     </div>
-                    <div className="flex-1">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-2">{clockwork.name}</h1>
+                    <div className="flex-1 min-w-0">
+                        {isEditingName ? (
+                            <div className="flex items-center gap-2 mb-2">
+                                <input
+                                    type="text"
+                                    value={editedName}
+                                    onChange={(e) => setEditedName(e.target.value)}
+                                    className="text-xl font-bold text-gray-900 bg-gray-50 border-b-2 border-indigo-500 outline-none w-full px-1"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleSaveName();
+                                        if (e.key === 'Escape') setIsEditingName(false);
+                                    }}
+                                />
+                                <button onClick={handleSaveName} className="p-1 text-green-600 hover:bg-green-50 rounded-lg">
+                                    <Check className="w-5 h-5" />
+                                </button>
+                                <button onClick={() => setIsEditingName(false)} className="p-1 text-gray-400 hover:bg-gray-50 rounded-lg">
+                                    <XCircle className="w-5 h-5" />
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 mb-2 group cursor-pointer" onClick={() => { setEditedName(clockwork.name); setIsEditingName(true); }}>
+                                <h1 className="text-2xl font-bold text-gray-900 truncate">{clockwork.name}</h1>
+                                <Edit2 className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                        )}
                         <div className="flex items-center gap-2">
                             <span
                                 className="px-3 py-1 rounded-full text-xs font-medium text-white"
@@ -127,9 +170,38 @@ export default function ClockworkDetail() {
                     </div>
                 </div>
 
-                {clockwork.notes && (
-                    <div className="p-3 bg-gray-50 rounded-xl">
-                        <p className="text-sm text-gray-700">{clockwork.notes}</p>
+                {isEditingNotes ? (
+                    <div className="mt-2">
+                        <textarea
+                            value={editedNotes}
+                            onChange={(e) => setEditedNotes(e.target.value)}
+                            className="w-full p-3 bg-gray-50 rounded-xl text-sm text-gray-700 border-2 border-indigo-500 outline-none min-h-[100px]"
+                            placeholder="Add notes here..."
+                            autoFocus
+                        />
+                        <div className="flex justify-end gap-2 mt-2">
+                            <button onClick={() => setIsEditingNotes(false)} className="px-3 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
+                                Cancel
+                            </button>
+                            <button onClick={handleSaveNotes} className="px-3 py-1 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                                Save Notes
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div
+                        className="p-3 bg-gray-50 rounded-xl group cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() => {
+                            setEditedNotes(clockwork.notes || '');
+                            setIsEditingNotes(true);
+                        }}
+                    >
+                        <div className="flex items-start justify-between">
+                            <p className={`text-sm ${clockwork.notes ? 'text-gray-700' : 'text-gray-400 italic'}`}>
+                                {clockwork.notes || 'No notes added. Click to add.'}
+                            </p>
+                            <Edit2 className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-1" />
+                        </div>
                     </div>
                 )}
             </div>
