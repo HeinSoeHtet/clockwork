@@ -56,7 +56,7 @@ export default function RootLayout({
 
             <div className="h-dvh flex flex-col bg-gray-50 overflow-hidden">
               <Header />
-              <main className="flex-1 overflow-y-auto pb-24">
+              <main className="flex-1 overflow-y-auto">
                 {children}
               </main>
               <BottomNav />
