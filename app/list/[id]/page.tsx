@@ -19,6 +19,7 @@ export default function ClockworkDetail() {
     const clockwork = clockworks.find(c => c.id === id);
 
     const [showAddMissModal, setShowAddMissModal] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [missDate, setMissDate] = useState('');
     const [isEditingName, setIsEditingName] = useState(false);
     const [editedName, setEditedName] = useState('');
@@ -66,10 +67,12 @@ export default function ClockworkDetail() {
     };
 
     const handleDelete = () => {
-        if (window.confirm(`Are you sure you want to delete "${clockwork.name}"? This action cannot be undone.`)) {
-            deleteClockwork(clockwork.id);
-            router.push('/list');
-        }
+        setShowDeleteModal(true);
+    };
+
+    const confirmDelete = () => {
+        deleteClockwork(clockwork.id);
+        router.push('/list');
     };
 
     const handleAddMiss = () => {
@@ -299,6 +302,35 @@ export default function ClockworkDetail() {
                         <div className="flex gap-3">
                             <button onClick={() => setShowAddMissModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl">Cancel</button>
                             <button onClick={handleAddMiss} disabled={!missDate} className="flex-1 py-3 bg-red-600 text-white rounded-xl">Add Miss</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4 mx-auto">
+                            <Trash2 className="w-6 h-6 text-red-600" />
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">Delete Clockwork?</h3>
+                        <p className="text-sm text-gray-500 text-center mb-6">
+                            Are you sure you want to delete <span className="font-semibold text-gray-900">"{clockwork.name}"</span>? This action cannot be undone and all history will be lost.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowDeleteModal(false)}
+                                className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDelete}
+                                className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors"
+                            >
+                                Delete
+                            </button>
                         </div>
                     </div>
                 </div>
