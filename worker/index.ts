@@ -14,6 +14,12 @@ self.addEventListener('install', (event: any) => {
     );
 });
 
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        (self as any).skipWaiting();
+    }
+});
+
 self.addEventListener('fetch', (event: any) => {
     if (event.request.method !== 'GET') return;
     event.respondWith(
