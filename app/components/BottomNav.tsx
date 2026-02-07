@@ -15,7 +15,7 @@ export default function BottomNav() {
   ];
 
   return (
-    <div className="bg-white border-t border-gray-200 safe-area-bottom z-50 flex-shrink-0">
+    <div className="bg-white/80 backdrop-blur-lg border-t border-gray-200 safe-area-bottom z-50 flex-shrink-0">
       <div className="max-w-md mx-auto grid grid-cols-4">
         {tabs.map((tab) => {
           const Icon = tab.icon;

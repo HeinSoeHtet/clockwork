@@ -54,9 +54,9 @@ export default function RootLayout({
           <PWARegistration />
           <ClientOnly>
 
-            <div className="h-dvh flex flex-col bg-gray-50 overflow-hidden">
+            <div className="fixed inset-0 flex flex-col bg-gray-50 overflow-hidden">
               <Header />
-              <main className="flex-1 overflow-y-auto">
+              <main className="flex-1 overflow-y-auto outline-none">
                 {children}
               </main>
               <BottomNav />

@@ -95,9 +95,9 @@ export default function Header() {
     if (!config) return null;
 
     return (
-        <div className={`sticky top-0 z-50 flex-shrink-0 ${config.backgroundClass} transition-colors duration-500`}>
-            <div className="h-[env(safe-area-inset-top)]" />
-            <div className={`bg-gradient-to-br ${config.gradient} relative pb-10 md:pb-6 transition-all duration-500`}>
+        <div className={`sticky top-0 z-50 flex-shrink-0 bg-gradient-to-br ${config.gradient} transition-all duration-500`}>
+            <div className="safe-area-top" />
+            <div className="relative pb-10 md:pb-6 tracking-tight">
                 <div className="max-w-md mx-auto px-4 pt-4">
                     <div className="flex items-center gap-3">
                         {config.showBack && (

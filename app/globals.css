@@ -148,6 +148,14 @@
     display: none;
     /* Chrome, Safari, Opera */
   }
+
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0.5rem);
+  }
+
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top, 0);
+  }
 }
 
 /**
