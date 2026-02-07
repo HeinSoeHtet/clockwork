@@ -33,8 +33,9 @@ self.addEventListener('fetch', (event: any) => {
 
 // Define the database schema (matches lib/db.ts)
 const db = new Dexie('ClockworkDB');
-db.version(2).stores({
-    clockworks: 'id, name, frequency, nextDue, synced'
+db.version(3).stores({
+    clockworks: 'id, name, frequency, nextDue, synced',
+    settings: 'id'
 });
 
 function calculateNextDue(completedDate: string, frequency: string): string {
@@ -49,6 +50,70 @@ function calculateNextDue(completedDate: string, frequency: string): string {
     }
     return date.toISOString().split('T')[0];
 }
+
+async function checkReminders() {
+    try {
+        const clockworks = await (db as any).clockworks.toArray();
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+
+        // Only notify if it's a reasonable hour (e.g., after 8 AM)
+        if (now.getHours() < 8) return;
+
+        const dueItems = clockworks.filter((c: any) => {
+            let effectiveDue = c.nextDue;
+            if (c.dueDateOffset) {
+                const date = new Date(c.nextDue);
+                date.setDate(date.getDate() + c.dueDateOffset);
+                effectiveDue = date.toISOString().split('T')[0];
+            }
+            return c.remindersEnabled && effectiveDue === todayStr;
+        });
+
+        if (dueItems.length > 0) {
+            const settings = await (db as any).settings.get('lastNotification');
+            const lastNotified = settings?.timestamp;
+            const fourHoursInMs = 4 * 60 * 60 * 1000;
+
+            const shouldNotify = !lastNotified || (now.getTime() - lastNotified) >= fourHoursInMs;
+
+            if (shouldNotify) {
+                for (const item of dueItems) {
+                    await (self as any).registration.showNotification(`${item.icon} ${item.name}`, {
+                        body: `It's time for your ${item.frequency} routine!`,
+                        icon: '/icon.png',
+                        badge: '/icon.png',
+                        tag: `clockwork-${item.id}`,
+                        actions: [
+                            { action: 'complete', title: 'Mark as Complete' },
+                            { action: 'skip', title: 'Skip for Now' }
+                        ],
+                        vibrate: [100, 50, 100],
+                        data: {
+                            url: '/today',
+                            clockworkId: item.id
+                        }
+                    });
+                }
+                await (db as any).settings.put({ id: 'lastNotification', timestamp: now.getTime() });
+            }
+        }
+    } catch (err) {
+        console.error('Error in checkReminders SW:', err);
+    }
+}
+
+// Background Sync
+self.addEventListener('periodicsync', (event: any) => {
+    if (event.tag === 'check-reminders') {
+        event.waitUntil(checkReminders());
+    }
+});
+
+// Periodic check when SW wakes up (e.g. on fetch or push)
+self.addEventListener('activate', (event: any) => {
+    event.waitUntil(checkReminders());
+});
 
 // Notification Click Event
 self.addEventListener('notificationclick', (event: any) => {
@@ -69,20 +134,22 @@ self.addEventListener('notificationclick', (event: any) => {
                         if (action === 'complete') {
                             const newCompletedDates = [today, ...clockwork.completedDates];
                             const newStreak = clockwork.streak + 1;
-                            const nextDue = calculateNextDue(today, clockwork.frequency);
+                            const nextDue = calculateNextDue(clockwork.nextDue, clockwork.frequency);
                             await (db as any).clockworks.update(clockworkId, {
                                 lastCompleted: today,
                                 completedDates: newCompletedDates,
                                 streak: newStreak,
                                 nextDue,
+                                dueDateOffset: 0,
                                 synced: false
                             });
                         } else {
                             const newSkippedDates = [today, ...clockwork.skippedDates];
-                            const nextDue = calculateNextDue(today, clockwork.frequency);
+                            const nextDue = calculateNextDue(clockwork.nextDue, clockwork.frequency);
                             await (db as any).clockworks.update(clockworkId, {
                                 skippedDates: newSkippedDates,
                                 nextDue,
+                                dueDateOffset: 0,
                                 synced: false
                             });
                         }
@@ -107,7 +174,8 @@ self.addEventListener('notificationclick', (event: any) => {
                     if (client.url === notification.data?.url && 'focus' in client) return client.focus();
                 }
                 if ((self as any).clients.openWindow) {
-                    return (self as any).clients.openWindow(notification.data?.url || '/');
+                    const url = notification.data?.url || '/';
+                    return (self as any).clients.openWindow(url);
                 }
             })
         );

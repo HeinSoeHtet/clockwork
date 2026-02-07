@@ -144,9 +144,35 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    // Register Periodic Background Sync
+    const registerPeriodicSync = useCallback(async () => {
+        if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
+
+        try {
+            const registration = await navigator.serviceWorker.ready;
+            if ('periodicSync' in registration) {
+                const status = await navigator.permissions.query({
+                    name: 'periodic-background-sync' as any
+                });
+
+                if (status.state === 'granted') {
+                    // @ts-ignore
+                    await registration.periodicSync.register('check-reminders', {
+                        minInterval: 60 * 60 * 1000 // 1 hour
+                    });
+                    console.log('✅ Periodic Background Sync registered');
+                } else {
+                    console.log('❌ Periodic Background Sync permission not granted');
+                }
+            }
+        } catch (error) {
+            console.error('❌ Failed to register Periodic Background Sync:', error);
+        }
+    }, []);
+
     // Periodic reminder check
     useEffect(() => {
-        const checkReminders = () => {
+        const checkReminders = async () => {
             const now = new Date();
             const todayStr = now.toISOString().split('T')[0];
 
@@ -159,10 +185,11 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             });
 
             if (dueItems.length > 0) {
-                const lastNotified = localStorage.getItem('lastNotificationTimestamp');
+                const settings = await db.settings.get('lastNotification');
+                const lastNotified = settings?.timestamp;
                 const fourHoursInMs = 4 * 60 * 60 * 1000;
 
-                const shouldNotify = !lastNotified || (now.getTime() - parseInt(lastNotified)) >= fourHoursInMs;
+                const shouldNotify = !lastNotified || (now.getTime() - lastNotified) >= fourHoursInMs;
 
                 if (shouldNotify) {
                     dueItems.forEach(item => {
@@ -172,21 +199,22 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
                             `clockwork-${item.id}`
                         );
                     });
-                    localStorage.setItem('lastNotificationTimestamp', now.getTime().toString());
+                    await db.settings.put({ id: 'lastNotification', timestamp: now.getTime() });
                 }
             } else {
                 // If nothing due, clear existing reminder
                 clearNotifications();
-                localStorage.removeItem('lastNotificationTimestamp');
+                await db.settings.delete('lastNotification');
             }
         };
 
-        // Check every 1 hour to catch the 4-hour window accurately
+        // Check every 1 hour
         const interval = setInterval(checkReminders, 1000 * 60 * 60);
         checkReminders(); // Initial check
+        registerPeriodicSync();
 
         return () => clearInterval(interval);
-    }, [clockworks]);
+    }, [clockworks, registerPeriodicSync]);
     // Auto-miss overdue items
     useEffect(() => {
         const handleAutoMiss = async () => {

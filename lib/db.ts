@@ -22,11 +22,13 @@ export interface Clockwork {
 
 export class MyDatabase extends Dexie {
     clockworks!: Table<Clockwork>;
+    settings!: Table<{ id: string; timestamp: number }>;
 
     constructor() {
         super('ClockworkDB');
         this.version(3).stores({
-            clockworks: 'id, name, frequency, nextDue, synced'
+            clockworks: 'id, name, frequency, nextDue, synced',
+            settings: 'id'
         });
     }
 }
