@@ -423,47 +423,27 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         const checkUser = async () => {
             console.log('🔍 Checking current user session...');
             try {
-                const { data, error: authError } = await supabase.auth.getUser();
+                // Use getSession for PWA speed/reliability first
+                const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
                 if (!mounted) return;
 
-                if (authError) {
-                    console.warn('⚠️ Auth error in checkUser:', authError.message);
+                if (sessionError) {
+                    console.error('⚠️ Session error in checkUser:', sessionError.message);
                     setUser(null);
                     setLoading(false);
                     return;
                 }
 
-                const user = data?.user ?? null;
+                const user = session?.user ?? null;
                 setUser(user);
                 setLoading(false);
 
                 if (user) {
-                    console.log('👤 User found:', user.email);
+                    console.log('👤 User found via session:', user.email);
 
-                    // Use upsert to ensure profile exists and get the latest timezone
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .upsert({
-                            id: user.id,
-                            timezone: localStorage.getItem('timezone') || 'UTC',
-                            updated_at: new Date().toISOString()
-                        }, { onConflict: 'id' })
-                        .select()
-                        .single();
-
-                    if (profile?.timezone && mounted) {
-                        const localTz = localStorage.getItem('timezone');
-                        if (profile.timezone === 'UTC' && localTz && localTz !== 'UTC') {
-                            await supabase
-                                .from('profiles')
-                                .update({ timezone: localTz, updated_at: new Date().toISOString() })
-                                .eq('id', user.id);
-                        } else {
-                            setTimezone(profile.timezone);
-                            localStorage.setItem('timezone', profile.timezone);
-                            await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
-                        }
-                    }
+                    // Upsert profile to ensure it exists and sync timezone
+                    await syncProfile(user.id);
                 }
             } catch (err) {
                 console.error('❌ Error in checkUser:', err);
@@ -473,45 +453,49 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
         checkUser();
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            console.log('🔔 Auth state changed:', _event, session?.user?.email);
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            console.log('🔔 Auth state changed:', event, session?.user?.email);
             if (!mounted) return;
 
-            try {
-                setUser(session?.user ?? null);
-                setLoading(false);
+            const user = session?.user ?? null;
+            setUser(user);
+            setLoading(false);
 
-                if (session?.user) {
-                    // Use upsert to ensure profile exists
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .upsert({
-                            id: session.user.id,
-                            timezone: localStorage.getItem('timezone') || 'UTC',
-                            updated_at: new Date().toISOString()
-                        }, { onConflict: 'id' })
-                        .select()
-                        .single();
-
-                    if (profile?.timezone && mounted) {
-                        const localTz = localStorage.getItem('timezone');
-                        if (profile.timezone === 'UTC' && localTz && localTz !== 'UTC') {
-                            await supabase
-                                .from('profiles')
-                                .update({ timezone: localTz, updated_at: new Date().toISOString() })
-                                .eq('id', session.user.id);
-                        } else {
-                            setTimezone(profile.timezone);
-                            localStorage.setItem('timezone', profile.timezone);
-                            await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
-                        }
-                    }
-                }
-            } catch (err) {
-                console.error('❌ Error in onAuthStateChange logic:', err);
-                if (mounted) setLoading(false);
+            if (user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED')) {
+                console.log('🔄 Syncing profile for event:', event);
+                await syncProfile(user.id);
             }
         });
+
+        // Helper to sync profile consistently
+        const syncProfile = async (userId: string) => {
+            try {
+                const localTz = localStorage.getItem('timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+                const { data: profile, error } = await supabase
+                    .from('profiles')
+                    .upsert({
+                        id: userId,
+                        timezone: localTz,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'id' })
+                    .select()
+                    .single();
+
+                if (error) {
+                    console.warn('⚠️ Profile upsert failed (check RLS):', error.message);
+                    return;
+                }
+
+                if (profile?.timezone && mounted) {
+                    setTimezone(profile.timezone);
+                    localStorage.setItem('timezone', profile.timezone);
+                    await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                }
+            } catch (err) {
+                console.error('❌ syncProfile error:', err);
+            }
+        };
 
         return () => {
             mounted = false;
