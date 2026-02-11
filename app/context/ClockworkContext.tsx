@@ -439,10 +439,16 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
                 if (user) {
                     console.log('👤 User found:', user.email);
+
+                    // Use upsert to ensure profile exists and get the latest timezone
                     const { data: profile } = await supabase
                         .from('profiles')
-                        .select('timezone')
-                        .eq('id', user.id)
+                        .upsert({
+                            id: user.id,
+                            timezone: localStorage.getItem('timezone') || 'UTC',
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'id' })
+                        .select()
                         .single();
 
                     if (profile?.timezone && mounted) {
@@ -476,10 +482,15 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
                 setLoading(false);
 
                 if (session?.user) {
+                    // Use upsert to ensure profile exists
                     const { data: profile } = await supabase
                         .from('profiles')
-                        .select('timezone')
-                        .eq('id', session.user.id)
+                        .upsert({
+                            id: session.user.id,
+                            timezone: localStorage.getItem('timezone') || 'UTC',
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'id' })
+                        .select()
                         .single();
 
                     if (profile?.timezone && mounted) {
@@ -509,12 +520,18 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
     }, [supabase]);
 
     const signInWithGoogle = async () => {
-        await supabase.auth.signInWithOAuth({
+        console.log('🚀 Initiating Google Login...');
+        const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: `${window.location.origin}/profile`
+                redirectTo: `${window.location.origin}/profile`,
+                queryParams: {
+                    access_type: 'offline',
+                    prompt: 'consent',
+                }
             }
         });
+        if (error) console.error('❌ Login error:', error.message);
     };
 
     const signOut = async () => {
