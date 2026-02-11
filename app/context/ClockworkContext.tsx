@@ -60,7 +60,8 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
     const [installPrompt, setInstallPrompt] = useState<any>(null);
     const [isInstallable, setIsInstallable] = useState(false);
 
-    const supabase = createClient();
+    // Memoize supabase client to prevent recreation on every render
+    const supabase = React.useMemo(() => createClient(), []);
 
     useEffect(() => {
         const handleBeforeInstallPrompt = (e: any) => {
@@ -389,224 +390,221 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         } finally {
             setIsSyncing(false);
         }
-    };
 
 
+        useEffect(() => {
+            let mounted = true;
 
-    useEffect(() => {
-        const checkUser = async () => {
-            console.log('🔍 Checking current user session...');
-            try {
-                const { data, error: authError } = await supabase.auth.getUser();
-                if (authError) {
-                    console.warn('⚠️ Auth error in checkUser:', authError.message);
-                    setUser(null);
-                    return;
-                }
+            const checkUser = async () => {
+                console.log('🔍 Checking current user session...');
+                try {
+                    const { data, error: authError } = await supabase.auth.getUser();
+                    if (!mounted) return;
 
-                const user = data?.user ?? null;
-                setUser(user);
-
-                if (user) {
-                    console.log('👤 User found:', user.email);
-                    // Fetch profile/timezone from Supabase
-                    const { data: profile, error: profileError } = await supabase
-                        .from('profiles')
-                        .select('timezone')
-                        .eq('id', user.id)
-                        .single();
-
-                    if (profileError) {
-                        console.warn('⚠️ Error fetching profile in checkUser:', profileError);
+                    if (authError) {
+                        console.warn('⚠️ Auth error in checkUser:', authError.message);
+                        setUser(null);
+                        setLoading(false);
+                        return;
                     }
 
-                    if (profile?.timezone) {
-                        const localTz = localStorage.getItem('timezone');
-                        if (profile.timezone === 'UTC' && localTz && localTz !== 'UTC') {
-                            await supabase
-                                .from('profiles')
-                                .update({ timezone: localTz, updated_at: new Date().toISOString() })
-                                .eq('id', user.id);
-                        } else {
-                            setTimezone(profile.timezone);
-                            localStorage.setItem('timezone', profile.timezone);
-                            await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                    const user = data?.user ?? null;
+                    setUser(user);
+                    setLoading(false);
+
+                    if (user) {
+                        console.log('👤 User found:', user.email);
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('timezone')
+                            .eq('id', user.id)
+                            .single();
+
+                        if (profile?.timezone && mounted) {
+                            const localTz = localStorage.getItem('timezone');
+                            if (profile.timezone === 'UTC' && localTz && localTz !== 'UTC') {
+                                await supabase
+                                    .from('profiles')
+                                    .update({ timezone: localTz, updated_at: new Date().toISOString() })
+                                    .eq('id', user.id);
+                            } else {
+                                setTimezone(profile.timezone);
+                                localStorage.setItem('timezone', profile.timezone);
+                                await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                            }
                         }
                     }
-                } else {
-                    console.log('👤 No user session found');
+                } catch (err) {
+                    console.error('❌ Error in checkUser:', err);
+                    if (mounted) setLoading(false);
                 }
-            } catch (err) {
-                console.error('❌ Error in checkUser:', err);
-            } finally {
-                setLoading(false);
-            }
-        };
+            };
 
-        checkUser();
+            checkUser();
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            console.log('🔔 Auth state changed:', _event, session?.user?.email);
-            try {
-                setUser(session?.user ?? null);
-                if (session?.user) {
-                    // Fetch profile/timezone from Supabase on login
-                    const { data: profile, error: profileError } = await supabase
-                        .from('profiles')
-                        .select('timezone')
-                        .eq('id', session.user.id)
-                        .single();
+            const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+                console.log('🔔 Auth state changed:', _event, session?.user?.email);
+                if (!mounted) return;
 
-                    if (profileError) {
-                        console.warn('⚠️ Error fetching profile in onAuthStateChange:', profileError);
-                    }
+                try {
+                    setUser(session?.user ?? null);
+                    setLoading(false);
 
-                    if (profile?.timezone) {
-                        const localTz = localStorage.getItem('timezone');
-                        if (profile.timezone === 'UTC' && localTz && localTz !== 'UTC') {
-                            await supabase
-                                .from('profiles')
-                                .update({ timezone: localTz, updated_at: new Date().toISOString() })
-                                .eq('id', session.user.id);
-                        } else {
-                            setTimezone(profile.timezone);
-                            localStorage.setItem('timezone', profile.timezone);
-                            await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                    if (session?.user) {
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('timezone')
+                            .eq('id', session.user.id)
+                            .single();
+
+                        if (profile?.timezone && mounted) {
+                            const localTz = localStorage.getItem('timezone');
+                            if (profile.timezone === 'UTC' && localTz && localTz !== 'UTC') {
+                                await supabase
+                                    .from('profiles')
+                                    .update({ timezone: localTz, updated_at: new Date().toISOString() })
+                                    .eq('id', session.user.id);
+                            } else {
+                                setTimezone(profile.timezone);
+                                localStorage.setItem('timezone', profile.timezone);
+                                await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                            }
                         }
                     }
+                } catch (err) {
+                    console.error('❌ Error in onAuthStateChange logic:', err);
+                    if (mounted) setLoading(false);
                 }
-            } catch (err) {
-                console.error('❌ Error in onAuthStateChange logic:', err);
-            } finally {
-                setLoading(false);
-            }
-        });
+            });
 
-        return () => subscription.unsubscribe();
-    }, []);
+            return () => {
+                mounted = false;
+                subscription.unsubscribe();
+            };
+        }, [supabase]);
 
-    const signInWithGoogle = async () => {
-        await supabase.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo: `${window.location.origin}/profile`
-            }
-        });
-    };
-
-    const signOut = async () => {
-        await supabase.auth.signOut();
-    };
-
-
-    const addClockwork = async (clockwork: Omit<Clockwork, 'id' | 'lastCompleted' | 'streak' | 'completedDates' | 'missedDates' | 'skippedDates' | 'synced' | 'dueDateOffset'>) => {
-
-        const newClockwork: Clockwork = {
-            ...clockwork,
-            id: Date.now().toString(),
-            lastCompleted: null,
-            streak: 0,
-            completedDates: [],
-            missedDates: [],
-            skippedDates: [],
-            dueDateOffset: 0,
-            synced: false
+        const signInWithGoogle = async () => {
+            await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: `${window.location.origin}/profile`
+                }
+            });
         };
-        await db.clockworks.add(newClockwork);
-    };
+
+        const signOut = async () => {
+            await supabase.auth.signOut();
+        };
 
 
-    const deleteClockwork = async (id: string) => {
-        const clockwork = await db.clockworks.get(id);
-        if (clockwork && user) {
-            // Delete from Cloud too
-            await supabase.from('clockworks').delete().eq('id', id);
-        }
-        await db.clockworks.delete(id);
-    };
+        const addClockwork = async (clockwork: Omit<Clockwork, 'id' | 'lastCompleted' | 'streak' | 'completedDates' | 'missedDates' | 'skippedDates' | 'synced' | 'dueDateOffset'>) => {
+
+            const newClockwork: Clockwork = {
+                ...clockwork,
+                id: Date.now().toString(),
+                lastCompleted: null,
+                streak: 0,
+                completedDates: [],
+                missedDates: [],
+                skippedDates: [],
+                dueDateOffset: 0,
+                synced: false
+            };
+            await db.clockworks.add(newClockwork);
+        };
 
 
-    const missClockwork = async (id: string, missDate: string) => {
-        const clockwork = await db.clockworks.get(id);
-        if (!clockwork) return;
-
-        const newMissedDates = [missDate, ...clockwork.missedDates];
-        const nextDue = calculateNextDueDate(missDate, clockwork.frequency, timezone);
-
-        await db.clockworks.update(id, {
-            missedDates: newMissedDates,
-            streak: 0,
-            nextDue,
-            dueDateOffset: 0,
-            synced: false
-        });
-    };
-
-    const shiftClockwork = useCallback(async (id: string, days: number) => {
-        const clockwork = await db.clockworks.get(id);
-        if (!clockwork) return;
-
-        await db.clockworks.update(id, {
-            dueDateOffset: (clockwork.dueDateOffset || 0) + days,
-            synced: false
-        });
-    }, []);
-
-    const updateClockwork = async (id: string, updates: Partial<Clockwork>) => {
-        await db.clockworks.update(id, { ...updates, synced: false });
-    };
-
-    const updateTimezone = async (newTz: string) => {
-        setTimezone(newTz);
-        localStorage.setItem('timezone', newTz);
-        await db.settings.put({ id: 'timezone', value: newTz, timestamp: Date.now() });
-    };
+        const deleteClockwork = async (id: string) => {
+            const clockwork = await db.clockworks.get(id);
+            if (clockwork && user) {
+                // Delete from Cloud too
+                await supabase.from('clockworks').delete().eq('id', id);
+            }
+            await db.clockworks.delete(id);
+        };
 
 
+        const missClockwork = async (id: string, missDate: string) => {
+            const clockwork = await db.clockworks.get(id);
+            if (!clockwork) return;
 
-    return (
-        <ClockworkContext.Provider value={{
-            clockworks,
-            user,
-            loading,
-            isSyncing,
-            hasUnsyncedChanges,
-            lastSyncTime,
-            signInWithGoogle,
-            signOut,
-            syncWithCloud,
-            requestNotificationPermission,
-            sendLocalNotification,
+            const newMissedDates = [missDate, ...clockwork.missedDates];
+            const nextDue = calculateNextDueDate(missDate, clockwork.frequency, timezone);
+
+            await db.clockworks.update(id, {
+                missedDates: newMissedDates,
+                streak: 0,
+                nextDue,
+                dueDateOffset: 0,
+                synced: false
+            });
+        };
+
+        const shiftClockwork = useCallback(async (id: string, days: number) => {
+            const clockwork = await db.clockworks.get(id);
+            if (!clockwork) return;
+
+            await db.clockworks.update(id, {
+                dueDateOffset: (clockwork.dueDateOffset || 0) + days,
+                synced: false
+            });
+        }, []);
+
+        const updateClockwork = async (id: string, updates: Partial<Clockwork>) => {
+            await db.clockworks.update(id, { ...updates, synced: false });
+        };
+
+        const updateTimezone = async (newTz: string) => {
+            setTimezone(newTz);
+            localStorage.setItem('timezone', newTz);
+            await db.settings.put({ id: 'timezone', value: newTz, timestamp: Date.now() });
+        };
 
 
-            addClockwork,
 
-            completeClockwork,
-            deleteClockwork,
-            skipClockwork,
-            missClockwork,
-            updateClockwork,
-            shiftClockwork,
-            timezone,
-            updateTimezone,
-            installApp,
-            isInstallable
-        }}>
-            {children}
-        </ClockworkContext.Provider>
-    );
-}
+        return (
+            <ClockworkContext.Provider value={{
+                clockworks,
+                user,
+                loading,
+                isSyncing,
+                hasUnsyncedChanges,
+                lastSyncTime,
+                signInWithGoogle,
+                signOut,
+                syncWithCloud,
+                requestNotificationPermission,
+                sendLocalNotification,
 
 
-export function useClockwork() {
-    const context = useContext(ClockworkContext);
-    if (context === undefined) {
-        throw new Error('useClockwork must be used within a ClockworkProvider');
+                addClockwork,
+
+                completeClockwork,
+                deleteClockwork,
+                skipClockwork,
+                missClockwork,
+                updateClockwork,
+                shiftClockwork,
+                timezone,
+                updateTimezone,
+                installApp,
+                isInstallable
+            }}>
+                {children}
+            </ClockworkContext.Provider>
+        );
     }
-    return context;
-}
 
 
-export function getEffectiveNextDue(clockwork: Clockwork): string {
-    return getEffectiveDate(clockwork.nextDue, clockwork.dueDateOffset);
-}
+    export function useClockwork() {
+        const context = useContext(ClockworkContext);
+        if (context === undefined) {
+            throw new Error('useClockwork must be used within a ClockworkProvider');
+        }
+        return context;
+    }
+
+
+    export function getEffectiveNextDue(clockwork: Clockwork): string {
+        return getEffectiveDate(clockwork.nextDue, clockwork.dueDateOffset);
+    }
