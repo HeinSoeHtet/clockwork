@@ -395,20 +395,32 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         const checkUser = async () => {
+            console.log('🔍 Checking current user session...');
             try {
-                const { data: { user } } = await supabase.auth.getUser();
+                const { data, error: authError } = await supabase.auth.getUser();
+                if (authError) {
+                    console.warn('⚠️ Auth error in checkUser:', authError.message);
+                    setUser(null);
+                    return;
+                }
+
+                const user = data?.user ?? null;
                 setUser(user);
 
                 if (user) {
+                    console.log('👤 User found:', user.email);
                     // Fetch profile/timezone from Supabase
-                    const { data: profile } = await supabase
+                    const { data: profile, error: profileError } = await supabase
                         .from('profiles')
                         .select('timezone')
                         .eq('id', user.id)
                         .single();
 
+                    if (profileError) {
+                        console.warn('⚠️ Error fetching profile in checkUser:', profileError);
+                    }
+
                     if (profile?.timezone) {
-                        // If Supabase has 'UTC' (default) but local is different, push local to Supabase
                         const localTz = localStorage.getItem('timezone');
                         if (profile.timezone === 'UTC' && localTz && localTz !== 'UTC') {
                             await supabase
@@ -421,7 +433,11 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
                             await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
                         }
                     }
+                } else {
+                    console.log('👤 No user session found');
                 }
+            } catch (err) {
+                console.error('❌ Error in checkUser:', err);
             } finally {
                 setLoading(false);
             }
@@ -430,30 +446,40 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         checkUser();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            setUser(session?.user ?? null);
-            if (session?.user) {
-                // Fetch profile/timezone from Supabase on login
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('timezone')
-                    .eq('id', session.user.id)
-                    .single();
+            console.log('🔔 Auth state changed:', _event, session?.user?.email);
+            try {
+                setUser(session?.user ?? null);
+                if (session?.user) {
+                    // Fetch profile/timezone from Supabase on login
+                    const { data: profile, error: profileError } = await supabase
+                        .from('profiles')
+                        .select('timezone')
+                        .eq('id', session.user.id)
+                        .single();
 
-                if (profile?.timezone) {
-                    const localTz = localStorage.getItem('timezone');
-                    if (profile.timezone === 'UTC' && localTz && localTz !== 'UTC') {
-                        await supabase
-                            .from('profiles')
-                            .update({ timezone: localTz, updated_at: new Date().toISOString() })
-                            .eq('id', session.user.id);
-                    } else {
-                        setTimezone(profile.timezone);
-                        localStorage.setItem('timezone', profile.timezone);
-                        await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                    if (profileError) {
+                        console.warn('⚠️ Error fetching profile in onAuthStateChange:', profileError);
+                    }
+
+                    if (profile?.timezone) {
+                        const localTz = localStorage.getItem('timezone');
+                        if (profile.timezone === 'UTC' && localTz && localTz !== 'UTC') {
+                            await supabase
+                                .from('profiles')
+                                .update({ timezone: localTz, updated_at: new Date().toISOString() })
+                                .eq('id', session.user.id);
+                        } else {
+                            setTimezone(profile.timezone);
+                            localStorage.setItem('timezone', profile.timezone);
+                            await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                        }
                     }
                 }
+            } catch (err) {
+                console.error('❌ Error in onAuthStateChange logic:', err);
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         });
 
         return () => subscription.unsubscribe();
@@ -580,9 +606,6 @@ export function useClockwork() {
     return context;
 }
 
-function calculateNextDue(completedDate: string, frequency: Clockwork['frequency']): string {
-    return calculateNextDueDate(completedDate, frequency);
-}
 
 export function getEffectiveNextDue(clockwork: Clockwork): string {
     return getEffectiveDate(clockwork.nextDue, clockwork.dueDateOffset);
