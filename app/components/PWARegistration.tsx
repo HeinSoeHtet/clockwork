@@ -7,8 +7,6 @@ import { useClockwork } from '../context/ClockworkContext';
 export default function PWARegistration() {
     const { installApp, isInstallable } = useClockwork();
     const [showInstallDialog, setShowInstallDialog] = useState(false);
-    const [showUpdateDialog, setShowUpdateDialog] = useState(false);
-    const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
 
     useEffect(() => {
         if (isInstallable) {
@@ -17,23 +15,21 @@ export default function PWARegistration() {
     }, [isInstallable]);
 
     useEffect(() => {
-        // Handle Service Worker Updates
+        // Handle Service Worker Updates in background
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.ready.then((registration) => {
-                // Check if there is already a waiting worker on load
+                // If there's already a waiting worker, skip waiting immediately
                 if (registration.waiting) {
-                    setWaitingWorker(registration.waiting);
-                    setShowUpdateDialog(true);
+                    registration.waiting.postMessage({ type: 'SKIP_WAITING' });
                 }
 
-                // Listen for new waiting workers
+                // Listen for new workers and skip waiting automatically when installed
                 registration.addEventListener('updatefound', () => {
                     const newWorker = registration.installing;
                     if (newWorker) {
                         newWorker.addEventListener('statechange', () => {
                             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                setWaitingWorker(newWorker);
-                                setShowUpdateDialog(true);
+                                newWorker.postMessage({ type: 'SKIP_WAITING' });
                             }
                         });
                     }
@@ -45,6 +41,7 @@ export default function PWARegistration() {
             navigator.serviceWorker.addEventListener('controllerchange', () => {
                 if (!refreshing) {
                     refreshing = true;
+                    console.log('✨ App updated to latest version in background. Refreshing...');
                     window.location.reload();
                 }
             });
@@ -54,12 +51,6 @@ export default function PWARegistration() {
     const handleInstallClick = async () => {
         await installApp();
         setShowInstallDialog(false);
-    };
-
-    const handleUpdateClick = () => {
-        if (waitingWorker) {
-            waitingWorker.postMessage({ type: 'SKIP_WAITING' });
-        }
     };
 
     return (
@@ -98,39 +89,6 @@ export default function PWARegistration() {
                                 className="flex-[2] px-4 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 text-white shadow-md shadow-indigo-100 hover:bg-indigo-700 active:scale-[0.98] transition-all"
                             >
                                 Install Now
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Update Dialog */}
-            {showUpdateDialog && (
-                <div className="fixed top-6 left-4 right-4 md:left-auto md:right-6 md:w-80 z-[110] animate-in fade-in slide-in-from-top-8 duration-500">
-                    <div className="bg-gradient-to-br from-indigo-600 to-purple-700 shadow-2xl rounded-3xl p-5 relative overflow-hidden">
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center flex-shrink-0">
-                                <Download className="w-6 h-6 text-white animate-bounce" />
-                            </div>
-                            <div className="flex-1">
-                                <h3 className="font-bold text-white text-base leading-tight">Update Available</h3>
-                                <p className="text-indigo-100 text-xs mt-1 leading-relaxed">
-                                    A new version of Clockwork is ready. Update now to get the latest features.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="mt-5 flex gap-2">
-                            <button
-                                onClick={() => setShowUpdateDialog(false)}
-                                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-                            >
-                                Later
-                            </button>
-                            <button
-                                onClick={handleUpdateClick}
-                                className="flex-[2] px-4 py-2.5 rounded-xl text-sm font-bold bg-white text-indigo-600 shadow-lg hover:bg-indigo-50 active:scale-[0.98] transition-all"
-                            >
-                                Update Now
                             </button>
                         </div>
                     </div>
