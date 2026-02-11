@@ -385,11 +385,11 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         setIsSyncing(true);
         console.log('🔄 Starting cloud sync...');
 
-        // Add a safety timeout (30 seconds) to unstick the UI
+        // Add a safety timeout (15 seconds) to unstick the UI
         const syncTimeout = setTimeout(() => {
-            console.warn('⚠️ Sync timed out after 30 seconds');
+            console.warn('⚠️ Sync timed out after 15 seconds');
             setIsSyncing(false);
-        }, 30000);
+        }, 15000);
 
         try {
             // 1. Sync Clockworks

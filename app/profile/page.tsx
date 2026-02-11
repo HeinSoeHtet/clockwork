@@ -155,14 +155,6 @@ export default function Profile() {
                         <p className="text-sm text-gray-600 mb-4">{user.email}</p>
 
                         <div className="flex flex-col gap-3">
-                            <button
-                                onClick={syncWithCloud}
-                                disabled={isSyncing}
-                                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-2xl font-semibold hover:bg-indigo-700 transition-all shadow-sm active:scale-95 disabled:opacity-50"
-                            >
-                                <Globe className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                                {isSyncing ? 'Syncing...' : 'Sync to Cloud'}
-                            </button>
 
                             <button
                                 onClick={signOut}
