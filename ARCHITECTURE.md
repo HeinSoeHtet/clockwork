@@ -26,6 +26,7 @@ The application uses a unified schema for both local **IndexedDB** and remote **
 | `endDate` | `string` \| `null` | Optional task expiration date. |
 | `notes` | `string` | Optional user notes (Max 500 chars). |
 | `synced` | `boolean` | Local-only flag to track pending syncs. |
+| `dueDateOffset`| `number` | Days added to the calculation of `nextDue`. |
 
 ## 2. Synchronization Strategy
 
@@ -36,7 +37,8 @@ Clockwork uses a **Local-First** synchronization model.
 2.  **Detection**: The `ClockworkContext` uses a `useLiveQuery` to monitor the database for any records where `synced === false`.
 3.  **Trigger**: If `hasUnsyncedChanges` is true, the Today dashboard displays a sync action button.
 4.  **Upsert**: The `syncWithCloud` function performs a bulk `upsert` to Supabase. Records are matched by `id`.
-5.  **Finalization**: Once the network request succeeds, local records are updated to `synced: true`.
+5.  **Preference Sync**: Timezone settings are synced separately via the Profile page to the `profiles` table in Supabase.
+6.  **Finalization**: Once the network request succeeds, local records are updated to `synced: true`.
 
 ### Conflict Resolution
 Since the `id` is generated locally and mapped 1:1 to the remote database, conflicts are handled via **Last Write Wins** during the `upsert` operation.
@@ -46,12 +48,18 @@ Since the `id` is generated locally and mapped 1:1 to the remote database, confl
 ### Caching Strategy: Stale-While-Revalidate
 The service worker (`sw.js`) prioritizes speed by serving cached assets immediately while fetching updates in the background.
 
-1.  **Cache Hit**: Returns the resource from the `clockwork-v2` cache instantly.
+1.  **Cache Hit**: Returns the resource from the cache instantly.
 2.  **Network Refresh**: Fetches the same resource from the network.
 3.  **Update**: Succeeding network responses overwrite the old cache entry.
 
+### Background Updates
+Clockwork implements a "silent" update strategy. When a new Service Worker is detected:
+1.  The app automatically triggers `skipWaiting()`.
+2.  The `controllerchange` event is caught by the `PWARegistration` component.
+3.  The app reloads automatically to ensure the user is always on the latest version.
+
 ### Installation Flow
-The `PWARegistration.tsx` component intercepts the `beforeinstallprompt` event. This allows specific browsers (Chrome/Edge) to show a custom, premium-designed dialog instead of the generic browser banner.
+The `PWARegistration.tsx` component intercepts the `beforeinstallprompt` event and exposes an `isInstallable` flag. Users can trigger the install via a custom dialog or manually from the Profile page.
 
 ## 4. Security Implementation
 
@@ -59,11 +67,10 @@ The `PWARegistration.tsx` component intercepts the `beforeinstallprompt` event. 
 The `CreateClockwork` page performs `trim()` on all strings and validates `length` constraints before they reach the database layer.
 
 ### Supabase RLS policies
-The following SQL policies must be enabled on the Supabase `clockworks` table:
-- **Select**: `auth.uid() = user_id`
-- **Insert/Update/Delete**: `auth.uid() = user_id`
-- **User ID**: All outgoing requests from the application automatically attach the authenticated `user.id`.
+The following SQL policies must be enabled on the Supabase `clockworks` and `profiles` tables:
+- **Select**: `auth.uid() = user_id` (or `id` for profiles)
+- **Insert/Update/Delete**: `auth.uid() = user_id` (or `id` for profiles)
 
 ---
 
-*Last Updated: January 2026*
+*Last Updated: February 2026*
