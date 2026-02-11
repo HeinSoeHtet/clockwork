@@ -352,66 +352,66 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
     const syncWithCloud = async () => {
         if (isSyncing) return;
-
         if (!user) {
-            console.log('User not logged in, redirecting to login...');
+            console.log('👤 User not logged in, redirecting to login...');
             await signInWithGoogle();
             return;
         }
 
         setIsSyncing(true);
-
         console.log('🔄 Starting cloud sync...');
+
+        // Add a safety timeout (30 seconds)
+        const syncTimeout = setTimeout(() => {
+            if (isSyncing) {
+                console.warn('⚠️ Sync timed out after 30 seconds');
+                setIsSyncing(false);
+            }
+        }, 30000);
+
         try {
-            // Sync Clockworks
+            // 1. Sync Clockworks
             const unsynced = await db.clockworks.filter(c => !c.synced).toArray();
             console.log(`Found ${unsynced.length} unsynced items`);
 
             if (unsynced.length > 0) {
-                // Map local data to include user_id for Supabase
                 const toSync = unsynced.map((item) => {
                     // eslint-disable-next-line @typescript-eslint/no-unused-vars
                     const { synced, ...rest } = item;
-                    return {
-                        ...rest,
-                        user_id: user.id
-                    };
+                    return { ...rest, user_id: user.id };
                 });
 
-                const { error } = await supabase
+                const { error: upsertError } = await supabase
                     .from('clockworks')
                     .upsert(toSync, { onConflict: 'id' });
 
-                if (error) {
-                    console.error('❌ Supabase Upsert Error:', error);
-                    throw error;
-                }
+                if (upsertError) throw upsertError;
 
-                // Mark as synced locally
                 await Promise.all(
                     unsynced.map(item => db.clockworks.update(item.id, { synced: true }))
                 );
             }
 
-            // Sync Profile (Timezone)
-            await supabase
+            // 2. Sync Profile Settings
+            const localTz = localStorage.getItem('timezone') || timezone;
+            const { error: profileError } = await supabase
                 .from('profiles')
                 .upsert({
                     id: user.id,
-                    timezone: timezone,
+                    timezone: localTz,
                     updated_at: new Date().toISOString()
                 }, { onConflict: 'id' });
+
+            if (profileError) console.warn('⚠️ Profile sync failed:', profileError.message);
 
             console.log('✅ Sync successful');
             const now = new Date().toISOString();
             setLastSyncTime(now);
             localStorage.setItem('lastSyncTime', now);
-            console.log('✅ Local records marked as synced');
-
         } catch (error) {
-
             console.error('❌ Sync failed:', error);
         } finally {
+            clearTimeout(syncTimeout);
             setIsSyncing(false);
         }
     };
@@ -420,38 +420,23 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         let mounted = true;
 
-        const checkUser = async () => {
-            console.log('🔍 Checking current user session...');
+        // Consolidate initial auth check and listener
+        const initAuth = async () => {
+            console.log('🔍 Initializing Auth...');
             try {
-                // Use getSession for PWA speed/reliability first
-                const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-                if (!mounted) return;
-
-                if (sessionError) {
-                    console.error('⚠️ Session error in checkUser:', sessionError.message);
-                    setUser(null);
+                // Get session first
+                const { data: { session } } = await supabase.auth.getSession();
+                if (mounted) {
+                    setUser(session?.user ?? null);
                     setLoading(false);
-                    return;
-                }
-
-                const user = session?.user ?? null;
-                setUser(user);
-                setLoading(false);
-
-                if (user) {
-                    console.log('👤 User found via session:', user.email);
-
-                    // Upsert profile to ensure it exists and sync timezone
-                    await syncProfile(user.id);
                 }
             } catch (err) {
-                console.error('❌ Error in checkUser:', err);
+                console.error('❌ Auth init error:', err);
                 if (mounted) setLoading(false);
             }
         };
 
-        checkUser();
+        initAuth();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             console.log('🔔 Auth state changed:', event, session?.user?.email);
@@ -462,40 +447,21 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             setLoading(false);
 
             if (user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED')) {
-                console.log('🔄 Syncing profile for event:', event);
-                await syncProfile(user.id);
+                // Background profile sync
+                try {
+                    const localTz = localStorage.getItem('timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+                    await supabase
+                        .from('profiles')
+                        .upsert({
+                            id: user.id,
+                            timezone: localTz,
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'id' });
+                } catch (err) {
+                    console.error('⚠️ Silent profile sync failed:', err);
+                }
             }
         });
-
-        // Helper to sync profile consistently
-        const syncProfile = async (userId: string) => {
-            try {
-                const localTz = localStorage.getItem('timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-
-                const { data: profile, error } = await supabase
-                    .from('profiles')
-                    .upsert({
-                        id: userId,
-                        timezone: localTz,
-                        updated_at: new Date().toISOString()
-                    }, { onConflict: 'id' })
-                    .select()
-                    .single();
-
-                if (error) {
-                    console.warn('⚠️ Profile upsert failed (check RLS):', error.message);
-                    return;
-                }
-
-                if (profile?.timezone && mounted) {
-                    setTimezone(profile.timezone);
-                    localStorage.setItem('timezone', profile.timezone);
-                    await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
-                }
-            } catch (err) {
-                console.error('❌ syncProfile error:', err);
-            }
-        };
 
         return () => {
             mounted = false;
@@ -505,21 +471,40 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
     const signInWithGoogle = async () => {
         console.log('🚀 Initiating Google Login...');
-        const { error } = await supabase.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo: `${window.location.origin}/profile`,
-                queryParams: {
-                    access_type: 'offline',
-                    prompt: 'consent',
+        try {
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: `${window.location.origin}/profile`,
                 }
-            }
-        });
-        if (error) console.error('❌ Login error:', error.message);
+            });
+            if (error) throw error;
+        } catch (error: any) {
+            console.error('❌ Login error:', error.message);
+        }
     };
 
     const signOut = async () => {
-        await supabase.auth.signOut();
+        console.log('� Signing out...');
+        try {
+            // Set user to null immediately for better UX
+            setUser(null);
+            setLoading(false);
+
+            // Perform actual sign out with timeout
+            const signOutPromise = supabase.auth.signOut();
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Sign out timeout')), 5000)
+            );
+
+            await Promise.race([signOutPromise, timeoutPromise]);
+
+            console.log('✅ Signed out successfully');
+        } catch (err) {
+            console.error('⚠️ Sign out warning/error:', err);
+            // Always ensure local state is cleared
+            setUser(null);
+        }
     };
 
 
