@@ -5,6 +5,7 @@ import { useClockwork, Clockwork } from '../context/ClockworkContext';
 import { Bell, Calendar } from 'lucide-react';
 import DatePicker from '../components/DatePicker';
 import { useRouter } from 'next/navigation';
+import { getLocalToday } from '@/lib/date-utils';
 
 const iconOptions = ['🧴', '🌱', '🛏️', '💆', '🚿', '🧹', '🧺', '🔧', '🚗', '💊', '🐕', '🐱', '🏃', '🏋️', '🧘', '💅'];
 const colorOptions = [
@@ -22,9 +23,9 @@ const frequencyOptions: { value: Clockwork['frequency']; label: string; descript
 ];
 
 export default function CreateClockwork() {
-    const { addClockwork } = useClockwork();
+    const { addClockwork, timezone } = useClockwork();
     const router = useRouter();
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalToday(timezone);
 
     const [name, setName] = useState('');
     const [selectedIcon, setSelectedIcon] = useState(iconOptions[0]);

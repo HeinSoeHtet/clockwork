@@ -1,4 +1,5 @@
 import { Clockwork, useClockwork, getEffectiveNextDue } from '../context/ClockworkContext';
+import { getLocalToday } from '@/lib/date-utils';
 import { Flame, CheckCircle2, Calendar, Bell, BellOff } from 'lucide-react';
 
 interface ClockworkCardProps {
@@ -10,8 +11,8 @@ interface ClockworkCardProps {
 }
 
 export default function ClockworkCard({ clockwork, onComplete, onSkip, isOverdue }: ClockworkCardProps) {
-    const { shiftClockwork } = useClockwork();
-    const today = new Date().toISOString().split('T')[0];
+    const { shiftClockwork, timezone } = useClockwork();
+    const today = getLocalToday(timezone);
     const isCompletedToday = clockwork.lastCompleted === today;
     const effectiveDue = getEffectiveNextDue(clockwork);
 

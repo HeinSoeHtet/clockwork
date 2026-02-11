@@ -36,6 +36,8 @@ interface ClockworkContextType {
     missClockwork: (id: string, missDate: string) => void;
     updateClockwork: (id: string, updates: Partial<Clockwork>) => void;
     shiftClockwork: (id: string, days: number) => void;
+    installApp: () => Promise<void>;
+    isInstallable: boolean;
 }
 
 
@@ -47,21 +49,53 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
     const [loading, setLoading] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
     const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
-    const [timezone, setTimezone] = useState<string>('UTC');
+    const [timezone, setTimezone] = useState<string>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('timezone');
+            if (saved) return saved;
+            return Intl.DateTimeFormat().resolvedOptions().timeZone;
+        }
+        return 'UTC';
+    });
+    const [installPrompt, setInstallPrompt] = useState<any>(null);
+    const [isInstallable, setIsInstallable] = useState(false);
+
     const supabase = createClient();
+
+    useEffect(() => {
+        const handleBeforeInstallPrompt = (e: any) => {
+            e.preventDefault();
+            setInstallPrompt(e);
+            setIsInstallable(true);
+        };
+
+        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    }, []);
+
+    const installApp = async () => {
+        if (!installPrompt) return;
+        installPrompt.prompt();
+        const { outcome } = await installPrompt.userChoice;
+        console.log(`User response to the install prompt: ${outcome}`);
+        setInstallPrompt(null);
+        setIsInstallable(false);
+    };
 
     useEffect(() => {
         const savedTime = localStorage.getItem('lastSyncTime');
         if (savedTime) setLastSyncTime(savedTime);
 
-        // Load timezone
+        // Load timezone from Dexie (most authoritative local storage)
         const loadTimezone = async () => {
             const savedTz = await db.settings.get('timezone');
             if (savedTz) {
                 setTimezone(savedTz.value);
+                localStorage.setItem('timezone', savedTz.value);
             } else {
                 const deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
                 setTimezone(deviceTz);
+                localStorage.setItem('timezone', deviceTz);
                 await db.settings.put({ id: 'timezone', value: deviceTz, timestamp: Date.now() });
             }
         };
@@ -120,27 +154,29 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
         const clockworkId = tag?.replace('clockwork-', '');
 
-        const options = {
+        const options: any = {
             body,
             icon: '/icon.png',
             badge: '/icon.png',
             tag: tag || 'clockwork-reminder',
-            actions: [
-                { action: 'complete', title: 'Mark as Complete' },
-                { action: 'skip', title: 'Skip for Now' }
-            ],
             vibrate: [100, 50, 100],
             data: {
                 url: window.location.origin + '/today',
                 clockworkId: clockworkId
             }
-        } as any;
+        };
 
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        if ('serviceWorker' in navigator && Notification.permission === 'granted') {
             navigator.serviceWorker.ready.then((registration) => {
-                registration.showNotification(title, options);
+                registration.showNotification(title, {
+                    ...options,
+                    actions: [
+                        { action: 'complete', title: 'Mark as Complete' },
+                        { action: 'skip', title: 'Skip for Now' }
+                    ]
+                });
             });
-        } else {
+        } else if (Notification.permission === 'granted') {
             new Notification(title, options);
         }
     };
@@ -306,32 +342,42 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
         console.log('🔄 Starting cloud sync...');
         try {
+            // Sync Clockworks
             const unsynced = await db.clockworks.filter(c => !c.synced).toArray();
             console.log(`Found ${unsynced.length} unsynced items`);
 
-            if (unsynced.length === 0) return;
+            if (unsynced.length > 0) {
+                // Map local data to include user_id for Supabase
+                const toSync = unsynced.map(({ synced, ...item }) => ({
+                    ...item,
+                    user_id: user.id
+                }));
 
-            // Map local data to include user_id for Supabase
-            const toSync = unsynced.map(({ synced, ...item }) => ({
-                ...item,
-                user_id: user.id
-            }));
+                const { error } = await supabase
+                    .from('clockworks')
+                    .upsert(toSync, { onConflict: 'id' });
 
-            const { data, error } = await supabase
-                .from('clockworks')
-                .upsert(toSync, { onConflict: 'id' });
+                if (error) {
+                    console.error('❌ Supabase Upsert Error:', error);
+                    throw error;
+                }
 
-            if (error) {
-                console.error('❌ Supabase Upsert Error:', error);
-                throw error;
+                // Mark as synced locally
+                await Promise.all(
+                    unsynced.map(item => db.clockworks.update(item.id, { synced: true }))
+                );
             }
 
-            console.log('✅ Cloud upsert successful:', data);
+            // Sync Profile (Timezone)
+            await supabase
+                .from('profiles')
+                .upsert({
+                    id: user.id,
+                    timezone: timezone,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'id' });
 
-            // Mark as synced locally
-            await Promise.all(
-                unsynced.map(item => db.clockworks.update(item.id, { synced: true }))
-            );
+            console.log('✅ Sync successful');
             const now = new Date().toISOString();
             setLastSyncTime(now);
             localStorage.setItem('lastSyncTime', now);
@@ -362,8 +408,18 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
                         .single();
 
                     if (profile?.timezone) {
-                        setTimezone(profile.timezone);
-                        await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                        // If Supabase has 'UTC' (default) but local is different, push local to Supabase
+                        const localTz = localStorage.getItem('timezone');
+                        if (profile.timezone === 'UTC' && localTz && localTz !== 'UTC') {
+                            await supabase
+                                .from('profiles')
+                                .update({ timezone: localTz, updated_at: new Date().toISOString() })
+                                .eq('id', user.id);
+                        } else {
+                            setTimezone(profile.timezone);
+                            localStorage.setItem('timezone', profile.timezone);
+                            await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                        }
                     }
                 }
             } finally {
@@ -384,8 +440,17 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
                     .single();
 
                 if (profile?.timezone) {
-                    setTimezone(profile.timezone);
-                    await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                    const localTz = localStorage.getItem('timezone');
+                    if (profile.timezone === 'UTC' && localTz && localTz !== 'UTC') {
+                        await supabase
+                            .from('profiles')
+                            .update({ timezone: localTz, updated_at: new Date().toISOString() })
+                            .eq('id', session.user.id);
+                    } else {
+                        setTimezone(profile.timezone);
+                        localStorage.setItem('timezone', profile.timezone);
+                        await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                    }
                 }
             }
             setLoading(false);
@@ -467,13 +532,8 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
     const updateTimezone = async (newTz: string) => {
         setTimezone(newTz);
+        localStorage.setItem('timezone', newTz);
         await db.settings.put({ id: 'timezone', value: newTz, timestamp: Date.now() });
-
-        if (user) {
-            await supabase
-                .from('profiles')
-                .upsert({ id: user.id, timezone: newTz, updated_at: new Date().toISOString() });
-        }
     };
 
 
@@ -502,7 +562,9 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             updateClockwork,
             shiftClockwork,
             timezone,
-            updateTimezone
+            updateTimezone,
+            installApp,
+            isInstallable
         }}>
             {children}
         </ClockworkContext.Provider>

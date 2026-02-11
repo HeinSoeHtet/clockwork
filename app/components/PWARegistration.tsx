@@ -2,23 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { Download, X } from 'lucide-react';
+import { useClockwork } from '../context/ClockworkContext';
 
 export default function PWARegistration() {
-    const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+    const { installApp, isInstallable } = useClockwork();
     const [showInstallDialog, setShowInstallDialog] = useState(false);
     const [showUpdateDialog, setShowUpdateDialog] = useState(false);
     const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
 
     useEffect(() => {
-        // Handle Install Prompt
-        const handleBeforeInstallPrompt = (e: any) => {
-            e.preventDefault();
-            setDeferredPrompt(e);
+        if (isInstallable) {
             setShowInstallDialog(true);
-        };
+        }
+    }, [isInstallable]);
 
-        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
+    useEffect(() => {
         // Handle Service Worker Updates
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.ready.then((registration) => {
@@ -51,18 +49,10 @@ export default function PWARegistration() {
                 }
             });
         }
-
-        return () => {
-            window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-        };
     }, []);
 
     const handleInstallClick = async () => {
-        if (!deferredPrompt) return;
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        console.log(`User response to the install prompt: ${outcome}`);
-        setDeferredPrompt(null);
+        await installApp();
         setShowInstallDialog(false);
     };
 

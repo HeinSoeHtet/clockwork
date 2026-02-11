@@ -1,11 +1,66 @@
 "use client";
 
 import { useClockwork } from '../context/ClockworkContext';
-import { Calendar, TrendingUp, Zap, User, LogOut, Bell, BellOff, BellRing, Globe } from 'lucide-react';
-import { useState } from 'react';
+import { Calendar, TrendingUp, Zap, User, LogOut, Bell, BellOff, BellRing, Globe, Download } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
+function LiveTime({ timezone }: { timezone: string }) {
+    const [time, setTime] = useState('');
 
+    useEffect(() => {
+        const update = () => {
+            const now = new Intl.DateTimeFormat('en-US', {
+                timeZone: timezone,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            }).format(new Date());
+            setTime(now);
+        };
 
+        update();
+        const interval = setInterval(update, 1000);
+        return () => clearInterval(interval);
+    }, [timezone]);
+
+    return (
+        <span className="text-[10px] font-mono font-medium text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+            <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse" />
+            {time}
+        </span>
+    );
+}
+
+const utcOffsets = [
+    { label: 'UTC -12', value: 'Etc/GMT+12' },
+    { label: 'UTC -11', value: 'Etc/GMT+11' },
+    { label: 'UTC -10', value: 'Etc/GMT+10' },
+    { label: 'UTC -9', value: 'Etc/GMT+9' },
+    { label: 'UTC -8', value: 'Etc/GMT+8' },
+    { label: 'UTC -7', value: 'Etc/GMT+7' },
+    { label: 'UTC -6', value: 'Etc/GMT+6' },
+    { label: 'UTC -5', value: 'Etc/GMT+5' },
+    { label: 'UTC -4', value: 'Etc/GMT+4' },
+    { label: 'UTC -3', value: 'Etc/GMT+3' },
+    { label: 'UTC -2', value: 'Etc/GMT+2' },
+    { label: 'UTC -1', value: 'Etc/GMT+1' },
+    { label: 'UTC 0', value: 'Etc/GMT-0' },
+    { label: 'UTC +1', value: 'Etc/GMT-1' },
+    { label: 'UTC +2', value: 'Etc/GMT-2' },
+    { label: 'UTC +3', value: 'Etc/GMT-3' },
+    { label: 'UTC +4', value: 'Etc/GMT-4' },
+    { label: 'UTC +5', value: 'Etc/GMT-5' },
+    { label: 'UTC +6', value: 'Etc/GMT-6' },
+    { label: 'UTC +7', value: 'Etc/GMT-7' },
+    { label: 'UTC +8', value: 'Etc/GMT-8' },
+    { label: 'UTC +9', value: 'Etc/GMT-9' },
+    { label: 'UTC +10', value: 'Etc/GMT-10' },
+    { label: 'UTC +11', value: 'Etc/GMT-11' },
+    { label: 'UTC +12', value: 'Etc/GMT-12' },
+    { label: 'UTC +13', value: 'Etc/GMT-13' },
+    { label: 'UTC +14', value: 'Etc/GMT-14' },
+];
 export default function Profile() {
     const {
         clockworks,
@@ -17,8 +72,13 @@ export default function Profile() {
         signOut,
         requestNotificationPermission,
         timezone,
-        updateTimezone
+        updateTimezone,
+        installApp,
+        isInstallable
     } = useClockwork();
+
+    const [showTzModal, setShowTzModal] = useState(false);
+    const [pendingTz, setPendingTz] = useState('');
 
     const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'default'>(
         typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
@@ -94,13 +154,24 @@ export default function Profile() {
                         </h2>
                         <p className="text-sm text-gray-600 mb-4">{user.email}</p>
 
-                        <button
-                            onClick={signOut}
-                            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-                        >
-                            <LogOut className="w-4 h-4" />
-                            Sign Out
-                        </button>
+                        <div className="flex flex-col gap-3">
+                            <button
+                                onClick={syncWithCloud}
+                                disabled={isSyncing}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-2xl font-semibold hover:bg-indigo-700 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                            >
+                                <Globe className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                                {isSyncing ? 'Syncing...' : 'Sync to Cloud'}
+                            </button>
+
+                            <button
+                                onClick={signOut}
+                                className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                            >
+                                <LogOut className="w-4 h-4" />
+                                Sign Out
+                            </button>
+                        </div>
                     </>
                 ) : (
                     <>
@@ -190,18 +261,27 @@ export default function Profile() {
 
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                            Timezone
-                        </label>
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                Timezone
+                            </label>
+                            <LiveTime timezone={timezone} />
+                        </div>
                         <div className="relative">
                             <select
                                 value={timezone}
-                                onChange={(e) => updateTimezone(e.target.value)}
+                                onChange={(e) => {
+                                    setPendingTz(e.target.value);
+                                    setShowTzModal(true);
+                                }}
                                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium text-gray-900 appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
                             >
-                                {Intl.supportedValuesOf('timeZone').map((tz) => (
-                                    <option key={tz} value={tz}>
-                                        {tz.replace(/_/g, ' ')}
+                                {!utcOffsets.find(o => o.value === timezone) && (
+                                    <option value={timezone}>{timezone.replace(/_/g, ' ')}</option>
+                                )}
+                                {utcOffsets.map((offset) => (
+                                    <option key={offset.value} value={offset.value}>
+                                        {offset.label}
                                     </option>
                                 ))}
                             </select>
@@ -212,11 +292,34 @@ export default function Profile() {
                             </div>
                         </div>
                         <p className="mt-2 text-[10px] text-gray-400">
-                            Current setting: <span className="font-semibold text-indigo-600">{timezone}</span>. This affects when your day resets.
+                            This affects when your day resets and when you receive notifications.
                         </p>
                     </div>
                 </div>
             </div>
+            {/* Preference Section End */}
+
+            {/* Install App Section (Only if installable) */}
+            {isInstallable && (
+                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-5 shadow-lg mb-6 text-white relative overflow-hidden">
+                    <div className="absolute -right-8 -top-8 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
+                    <div className="relative z-10 text-center">
+                        <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mx-auto mb-3">
+                            <Download className="w-6 h-6 text-white" />
+                        </div>
+                        <h3 className="font-bold text-lg mb-1">Get the App</h3>
+                        <p className="text-white/80 text-xs mb-4 max-w-[200px] mx-auto leading-relaxed">
+                            Install for a full-screen experience and reliable reminders.
+                        </p>
+                        <button
+                            onClick={installApp}
+                            className="w-full py-3 bg-white text-indigo-600 rounded-xl text-sm font-bold shadow-md active:scale-95 transition-all hover:bg-gray-50"
+                        >
+                            Add to Home Screen
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Stats Grid */}
             <div className="grid grid-cols-3 gap-3 mb-6">
@@ -301,6 +404,37 @@ export default function Profile() {
                                     </div>
                                 </div>
                             ))}
+                    </div>
+                </div>
+            )}
+            {/* Timezone Confirmation Modal */}
+            {showTzModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mb-4 mx-auto">
+                            <Globe className="w-6 h-6 text-indigo-600" />
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">Change Timezone?</h3>
+                        <p className="text-sm text-gray-500 text-center mb-6">
+                            Changing your timezone to <span className="font-semibold text-indigo-600">{utcOffsets.find(o => o.value === pendingTz)?.label}</span> will shift your daily schedule. This change will be saved locally.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowTzModal(false)}
+                                className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    updateTimezone(pendingTz);
+                                    setShowTzModal(false);
+                                }}
+                                className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-sm"
+                            >
+                                Confirm
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
