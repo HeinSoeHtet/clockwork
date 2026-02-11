@@ -10,7 +10,10 @@ export default function PWARegistration() {
 
     useEffect(() => {
         if (isInstallable) {
-            setShowInstallDialog(true);
+            const frame = requestAnimationFrame(() => {
+                setShowInstallDialog(true);
+            });
+            return () => cancelAnimationFrame(frame);
         }
     }, [isInstallable]);
 

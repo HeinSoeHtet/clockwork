@@ -6,7 +6,10 @@ export default function ClientOnly({ children }: { children: ReactNode }) {
     const [hasMounted, setHasMounted] = useState(false);
 
     useEffect(() => {
-        setHasMounted(true);
+        const frame = requestAnimationFrame(() => {
+            setHasMounted(true);
+        });
+        return () => cancelAnimationFrame(frame);
     }, []);
 
     if (!hasMounted) {

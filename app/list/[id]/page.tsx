@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useClockwork, getEffectiveNextDue } from '../../context/ClockworkContext';
-import { Bell, BellOff, Flame, Trash2, CheckCircle2, XCircle, SkipForward, Plus, Edit2, Check } from 'lucide-react';
+import { Bell, BellOff, Flame, Trash2, XCircle, SkipForward, Plus, Edit2, Check } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { getLocalToday } from '@/lib/date-utils';
 

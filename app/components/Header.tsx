@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter, useParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useClockwork } from '../context/ClockworkContext';
 import { ArrowLeft } from 'lucide-react';
@@ -8,7 +8,6 @@ import { ArrowLeft } from 'lucide-react';
 export default function Header() {
     const pathname = usePathname();
     const router = useRouter();
-    const params = useParams();
     const { clockworks } = useClockwork();
 
     const dateString = new Date().toLocaleDateString('en-US', {
