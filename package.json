@@ -7,7 +7,7 @@
     "dev:pwa": "ENABLE_PWA_DEV=true next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint app lib worker"
   },
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",

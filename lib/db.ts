@@ -22,7 +22,8 @@ export interface Clockwork {
 
 export class MyDatabase extends Dexie {
     clockworks!: Table<Clockwork>;
-    settings!: Table<{ id: string; timestamp: number }>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    settings!: Table<{ id: string; value: any; timestamp: number }>;
 
     constructor() {
         super('ClockworkDB');

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useClockwork, getEffectiveNextDue } from '../../context/ClockworkContext';
 import { Bell, BellOff, Flame, Trash2, CheckCircle2, XCircle, SkipForward, Plus, Edit2, Check } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
+import { getLocalToday } from '@/lib/date-utils';
 
 type HistoryEntry = {
     date: string;
@@ -11,7 +12,7 @@ type HistoryEntry = {
 };
 
 export default function ClockworkDetail() {
-    const { clockworks, deleteClockwork, missClockwork, updateClockwork } = useClockwork();
+    const { clockworks, deleteClockwork, missClockwork, updateClockwork, timezone } = useClockwork();
     const router = useRouter();
     const params = useParams();
     const id = params.id as string;
@@ -26,7 +27,7 @@ export default function ClockworkDetail() {
     const [isEditingNotes, setIsEditingNotes] = useState(false);
     const [editedNotes, setEditedNotes] = useState('');
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalToday(timezone);
 
     if (!clockwork) {
         return (
@@ -316,7 +317,7 @@ export default function ClockworkDetail() {
                         </div>
                         <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">Delete Clockwork?</h3>
                         <p className="text-sm text-gray-500 text-center mb-6">
-                            Are you sure you want to delete <span className="font-semibold text-gray-900">"{clockwork.name}"</span>? This action cannot be undone and all history will be lost.
+                            Are you sure you want to delete <span className="font-semibold text-gray-900">&quot;{clockwork.name}&quot;</span>? This action cannot be undone and all history will be lost.
                         </p>
                         <div className="flex gap-3">
                             <button

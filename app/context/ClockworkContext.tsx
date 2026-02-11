@@ -7,6 +7,7 @@ import { db, type Clockwork } from '@/lib/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { createClient } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
+import { getLocalToday, calculateNextDueDate, getEffectiveDate } from '@/lib/date-utils';
 
 export type { Clockwork };
 
@@ -22,6 +23,8 @@ interface ClockworkContextType {
     syncWithCloud: () => Promise<void>;
     requestNotificationPermission: () => Promise<boolean>;
     sendLocalNotification: (title: string, body: string, tag?: string) => void;
+    timezone: string;
+    updateTimezone: (tz: string) => Promise<void>;
 
 
     addClockwork: (clockwork: Omit<Clockwork, 'id' | 'lastCompleted' | 'streak' | 'completedDates' | 'missedDates' | 'skippedDates' | 'synced' | 'dueDateOffset'>) => void;
@@ -44,11 +47,25 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
     const [loading, setLoading] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
     const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+    const [timezone, setTimezone] = useState<string>('UTC');
     const supabase = createClient();
 
     useEffect(() => {
         const savedTime = localStorage.getItem('lastSyncTime');
         if (savedTime) setLastSyncTime(savedTime);
+
+        // Load timezone
+        const loadTimezone = async () => {
+            const savedTz = await db.settings.get('timezone');
+            if (savedTz) {
+                setTimezone(savedTz.value);
+            } else {
+                const deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                setTimezone(deviceTz);
+                await db.settings.put({ id: 'timezone', value: deviceTz, timestamp: Date.now() });
+            }
+        };
+        loadTimezone();
     }, []);
 
     const requestNotificationPermission = async () => {
@@ -65,11 +82,11 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         const clockwork = await db.clockworks.get(id);
         if (!clockwork) return;
 
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalToday(timezone);
         const newCompletedDates = [today, ...clockwork.completedDates];
         const newStreak = clockwork.streak + 1;
         // Maintain sequence by calculating from original nextDue, not today
-        const nextDue = calculateNextDue(clockwork.nextDue, clockwork.frequency);
+        const nextDue = calculateNextDueDate(clockwork.nextDue, clockwork.frequency, timezone);
 
         await db.clockworks.update(id, {
             lastCompleted: today,
@@ -79,16 +96,16 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             dueDateOffset: 0,
             synced: false
         });
-    }, []);
+    }, [timezone]);
 
     const skipClockwork = useCallback(async (id: string) => {
         const clockwork = await db.clockworks.get(id);
         if (!clockwork) return;
 
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalToday(timezone);
         const newSkippedDates = [today, ...clockwork.skippedDates];
         // Maintain sequence by calculating from original nextDue
-        const nextDue = calculateNextDue(clockwork.nextDue, clockwork.frequency);
+        const nextDue = calculateNextDueDate(clockwork.nextDue, clockwork.frequency, timezone);
 
         await db.clockworks.update(id, {
             skippedDates: newSkippedDates,
@@ -96,7 +113,7 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             dueDateOffset: 0,
             synced: false
         });
-    }, []);
+    }, [timezone]);
 
     const sendLocalNotification = (title: string, body: string, tag?: string) => {
         if (!('Notification' in window) || Notification.permission !== 'granted') return;
@@ -156,7 +173,7 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
                 });
 
                 if (status.state === 'granted') {
-                    // @ts-ignore
+                    // @ts-expect-error periodicSync is experimental
                     await registration.periodicSync.register('check-reminders', {
                         minInterval: 60 * 60 * 1000 // 1 hour
                     });
@@ -174,10 +191,17 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         const checkReminders = async () => {
             const now = new Date();
-            const todayStr = now.toISOString().split('T')[0];
+            const todayStr = getLocalToday(timezone, now);
+
+            // Get local hours according to the preferred timezone
+            const localHours = parseInt(new Intl.DateTimeFormat('en-US', {
+                timeZone: timezone,
+                hour: '2-digit',
+                hour12: false
+            }).format(now));
 
             // Only notify if it's a reasonable hour (e.g., after 8 AM)
-            if (now.getHours() < 8) return;
+            if (localHours < 8) return;
 
             const dueItems = clockworks.filter(c => {
                 const effectiveDue = getEffectiveNextDue(c);
@@ -199,7 +223,7 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
                             `clockwork-${item.id}`
                         );
                     });
-                    await db.settings.put({ id: 'lastNotification', timestamp: now.getTime() });
+                    await db.settings.put({ id: 'lastNotification', value: true, timestamp: now.getTime() });
                 }
             } else {
                 // If nothing due, clear existing reminder
@@ -214,18 +238,18 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         registerPeriodicSync();
 
         return () => clearInterval(interval);
-    }, [clockworks, registerPeriodicSync]);
+    }, [clockworks, registerPeriodicSync, timezone]);
     // Auto-miss overdue items
     useEffect(() => {
         const handleAutoMiss = async () => {
-            const todayStr = new Date().toISOString().split('T')[0];
-            const overdue = clockworks.filter(c => c.nextDue < todayStr);
+            const todayStr = getLocalToday(timezone);
+            const overdue = clockworks.filter(c => getEffectiveNextDue(c) < todayStr);
 
             if (overdue.length > 0) {
                 for (const item of overdue) {
                     console.log(`⏰ Auto-missing overdue task: ${item.name}`);
                     const newMissedDates = [item.nextDue, ...item.missedDates];
-                    const newNextDue = calculateNextDue(item.nextDue, item.frequency);
+                    const newNextDue = calculateNextDueDate(item.nextDue, item.frequency, timezone);
 
                     await db.clockworks.update(item.id, {
                         missedDates: newMissedDates,
@@ -239,7 +263,7 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         };
 
         handleAutoMiss();
-    }, [clockworks]);
+    }, [clockworks, timezone]);
 
 
 
@@ -328,6 +352,20 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             try {
                 const { data: { user } } = await supabase.auth.getUser();
                 setUser(user);
+
+                if (user) {
+                    // Fetch profile/timezone from Supabase
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('timezone')
+                        .eq('id', user.id)
+                        .single();
+
+                    if (profile?.timezone) {
+                        setTimezone(profile.timezone);
+                        await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                    }
+                }
             } finally {
                 setLoading(false);
             }
@@ -335,8 +373,21 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
         checkUser();
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
             setUser(session?.user ?? null);
+            if (session?.user) {
+                // Fetch profile/timezone from Supabase on login
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('timezone')
+                    .eq('id', session.user.id)
+                    .single();
+
+                if (profile?.timezone) {
+                    setTimezone(profile.timezone);
+                    await db.settings.put({ id: 'timezone', value: profile.timezone, timestamp: Date.now() });
+                }
+            }
             setLoading(false);
         });
 
@@ -389,7 +440,7 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         if (!clockwork) return;
 
         const newMissedDates = [missDate, ...clockwork.missedDates];
-        const nextDue = calculateNextDue(missDate, clockwork.frequency);
+        const nextDue = calculateNextDueDate(missDate, clockwork.frequency, timezone);
 
         await db.clockworks.update(id, {
             missedDates: newMissedDates,
@@ -412,6 +463,17 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
     const updateClockwork = async (id: string, updates: Partial<Clockwork>) => {
         await db.clockworks.update(id, { ...updates, synced: false });
+    };
+
+    const updateTimezone = async (newTz: string) => {
+        setTimezone(newTz);
+        await db.settings.put({ id: 'timezone', value: newTz, timestamp: Date.now() });
+
+        if (user) {
+            await supabase
+                .from('profiles')
+                .upsert({ id: user.id, timezone: newTz, updated_at: new Date().toISOString() });
+        }
     };
 
 
@@ -438,7 +500,9 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             skipClockwork,
             missClockwork,
             updateClockwork,
-            shiftClockwork
+            shiftClockwork,
+            timezone,
+            updateTimezone
         }}>
             {children}
         </ClockworkContext.Provider>
@@ -455,22 +519,9 @@ export function useClockwork() {
 }
 
 function calculateNextDue(completedDate: string, frequency: Clockwork['frequency']): string {
-    const date = new Date(completedDate);
-    switch (frequency) {
-        case 'daily': date.setDate(date.getDate() + 1); break;
-        case 'alternate': date.setDate(date.getDate() + 2); break;
-        case 'every3days': date.setDate(date.getDate() + 3); break;
-        case 'weekly': date.setDate(date.getDate() + 7); break;
-        case 'biweekly': date.setDate(date.getDate() + 14); break;
-        case 'monthly': date.setMonth(date.getMonth() + 1); break;
-    }
-    return date.toISOString().split('T')[0];
+    return calculateNextDueDate(completedDate, frequency);
 }
 
 export function getEffectiveNextDue(clockwork: Clockwork): string {
-    if (!clockwork.dueDateOffset) return clockwork.nextDue;
-
-    const date = new Date(clockwork.nextDue);
-    date.setDate(date.getDate() + clockwork.dueDateOffset);
-    return date.toISOString().split('T')[0];
+    return getEffectiveDate(clockwork.nextDue, clockwork.dueDateOffset);
 }

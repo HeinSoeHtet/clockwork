@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import Dexie from 'dexie';
 
 const CACHE_NAME = 'clockwork-v2';
@@ -44,6 +45,25 @@ db.version(3).stores({
     settings: 'id'
 });
 
+async function getTimezone(): Promise<string> {
+    try {
+        const setting = await (db as any).settings.get('timezone');
+        return setting?.value || 'UTC';
+    } catch {
+        return 'UTC';
+    }
+}
+
+function getLocalToday(timezone: string, date: Date = new Date()): string {
+    return new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).format(date);
+}
+
+
 function calculateNextDue(completedDate: string, frequency: string): string {
     const date = new Date(completedDate);
     switch (frequency) {
@@ -59,12 +79,20 @@ function calculateNextDue(completedDate: string, frequency: string): string {
 
 async function checkReminders() {
     try {
+        const timezone = await getTimezone();
         const clockworks = await (db as any).clockworks.toArray();
         const now = new Date();
-        const todayStr = now.toISOString().split('T')[0];
+        const todayStr = getLocalToday(timezone, now);
 
-        // Only notify if it's a reasonable hour (e.g., after 8 AM)
-        if (now.getHours() < 8) return;
+        // Get local hours according to the preferred timezone
+        const localHours = parseInt(new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            hour: '2-digit',
+            hour12: false
+        }).format(now));
+
+        // Only notify if it's a reasonable hour (e.g., after 8 AM local time)
+        if (localHours < 8) return;
 
         const dueItems = clockworks.filter((c: any) => {
             let effectiveDue = c.nextDue;
@@ -101,7 +129,8 @@ async function checkReminders() {
                         }
                     });
                 }
-                await (db as any).settings.put({ id: 'lastNotification', timestamp: now.getTime() });
+                const lastNotifiedSetting = { id: 'lastNotification', value: true, timestamp: now.getTime() };
+                await (db as any).settings.put(lastNotifiedSetting);
             }
         }
     } catch (err) {
@@ -135,7 +164,8 @@ self.addEventListener('notificationclick', (event: any) => {
                 try {
                     const clockwork: any = await (db as any).clockworks.get(clockworkId);
                     if (clockwork) {
-                        const today = new Date().toISOString().split('T')[0];
+                        const timezone = await getTimezone();
+                        const today = getLocalToday(timezone);
 
                         if (action === 'complete') {
                             const newCompletedDates = [today, ...clockwork.completedDates];

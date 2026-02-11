@@ -2,8 +2,9 @@
 
 import { useClockwork, getEffectiveNextDue } from '../context/ClockworkContext';
 import ClockworkCard from '../components/ClockworkCard';
-import { Calendar, CloudSync, CloudCheck, AlertCircle, CloudOff, Bell, BellRing } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Calendar, CloudSync, CloudCheck, AlertCircle, CloudOff, BellRing } from 'lucide-react';
+import { useState } from 'react';
+import { getLocalToday } from '@/lib/date-utils';
 
 
 
@@ -18,23 +19,20 @@ export default function TodayPage() {
         lastSyncTime,
         syncWithCloud,
         skipClockwork,
-        requestNotificationPermission
+        requestNotificationPermission,
+        timezone
     } = useClockwork();
 
-    const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'default'>('default');
-
-    useEffect(() => {
-        if ('Notification' in window) {
-            setNotificationStatus(Notification.permission);
-        }
-    }, []);
+    const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'default'>(
+        typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
+    );
 
     const handleRequestPermission = async () => {
         const granted = await requestNotificationPermission();
         setNotificationStatus(granted ? 'granted' : 'denied');
     };
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalToday(timezone);
 
     const dueToday = clockworks.filter(c => getEffectiveNextDue(c) === today);
     const overdue = clockworks.filter(c => getEffectiveNextDue(c) < today);

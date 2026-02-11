@@ -1,8 +1,8 @@
 "use client";
 
 import { useClockwork } from '../context/ClockworkContext';
-import { Calendar, TrendingUp, Zap, User, LogOut, CloudSync, CloudCheck, CloudOff, Bell, BellOff, BellRing } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Calendar, TrendingUp, Zap, User, LogOut, Bell, BellOff, BellRing, Globe } from 'lucide-react';
+import { useState } from 'react';
 
 
 
@@ -15,16 +15,14 @@ export default function Profile() {
         syncWithCloud,
         signInWithGoogle,
         signOut,
-        requestNotificationPermission
+        requestNotificationPermission,
+        timezone,
+        updateTimezone
     } = useClockwork();
 
-    const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'default'>('default');
-
-    useEffect(() => {
-        if ('Notification' in window) {
-            setNotificationStatus(Notification.permission);
-        }
-    }, []);
+    const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'default'>(
+        typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
+    );
 
     const handleRequestPermission = async () => {
         const granted = await requestNotificationPermission();
@@ -176,6 +174,48 @@ export default function Profile() {
                         Enable
                     </button>
                 )}
+            </div>
+
+            {/* Preferences */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm mb-6 border border-gray-100">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-indigo-50 rounded-xl">
+                        <Globe className="w-5 h-5 text-indigo-600" />
+                    </div>
+                    <div>
+                        <h3 className="font-semibold text-gray-900">Preferences</h3>
+                        <p className="text-xs text-gray-500">Customize your experience</p>
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                            Timezone
+                        </label>
+                        <div className="relative">
+                            <select
+                                value={timezone}
+                                onChange={(e) => updateTimezone(e.target.value)}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium text-gray-900 appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
+                            >
+                                {Intl.supportedValuesOf('timeZone').map((tz) => (
+                                    <option key={tz} value={tz}>
+                                        {tz.replace(/_/g, ' ')}
+                                    </option>
+                                ))}
+                            </select>
+                            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </div>
+                        </div>
+                        <p className="mt-2 text-[10px] text-gray-400">
+                            Current setting: <span className="font-semibold text-indigo-600">{timezone}</span>. This affects when your day resets.
+                        </p>
+                    </div>
+                </div>
             </div>
 
             {/* Stats Grid */}

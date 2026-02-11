@@ -49,3 +49,36 @@ create policy "Users can delete their own clockworks"
 
 -- 4. Enable Realtime (Optional)
 -- alter publication supabase_realtime add table clockworks;
+
+-- 5. Create Profiles table for user settings
+create table profiles (
+  "id" uuid references auth.users on delete cascade not null primary key,
+  "timezone" text not null default 'UTC',
+  "updated_at" timestamp with time zone default now()
+);
+
+-- Enable RLS for profiles
+alter table profiles enable row level security;
+
+-- Profile Policies
+create policy "Users can see their own profile"
+  on profiles for select
+  using ( auth.uid() = id );
+
+create policy "Users can update their own profile"
+  on profiles for update
+  using ( auth.uid() = id );
+
+-- Trigger to create profile on signup
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, timezone)
+  values (new.id, 'UTC');
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
