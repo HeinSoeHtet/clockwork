@@ -8,6 +8,9 @@ import Header from "./components/Header";
 import PWARegistration from "./components/PWARegistration";
 
 
+import SyncConflictDialog from "./components/SyncConflictDialog";
+
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -51,9 +54,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ClockworkProvider>
-          <PWARegistration />
           <ClientOnly>
-
+            <SyncConflictDialog />
+            <PWARegistration />
             <div className="fixed inset-0 flex flex-col bg-gray-50 overflow-hidden">
               <Header />
               <main className="flex-1 overflow-y-auto outline-none">

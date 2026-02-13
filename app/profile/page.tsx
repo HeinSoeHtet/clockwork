@@ -3,6 +3,7 @@
 import { useClockwork } from '../context/ClockworkContext';
 import { Calendar, TrendingUp, Zap, User, LogOut, Bell, BellOff, BellRing, Globe, Download } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 
 function LiveTime({ timezone }: { timezone: string }) {
     const [time, setTime] = useState('');
@@ -66,8 +67,6 @@ export default function Profile() {
         clockworks,
         user,
         loading,
-        isSyncing,
-        syncWithCloud,
         signInWithGoogle,
         signOut,
         requestNotificationPermission,
@@ -136,12 +135,14 @@ export default function Profile() {
                     </div>
                 ) : user ? (
                     <>
-                        <div className="relative inline-block mb-4">
+                        <div className="relative inline-block mb-4 overflow-hidden rounded-full border-4 border-gray-50 shadow-md">
                             {user.user_metadata.avatar_url ? (
-                                <img
+                                <Image
                                     src={user.user_metadata.avatar_url}
-                                    alt={user.user_metadata.full_name}
-                                    className="w-20 h-20 rounded-full border-4 border-gray-50 shadow-md"
+                                    alt={user.user_metadata.full_name || 'User avatar'}
+                                    width={80}
+                                    height={80}
+                                    className="object-cover"
                                 />
                             ) : (
                                 <div className="w-20 h-20 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center mx-auto shadow-md">
@@ -399,6 +400,7 @@ export default function Profile() {
                     </div>
                 </div>
             )}
+
             {/* Timezone Confirmation Modal */}
             {showTzModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">

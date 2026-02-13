@@ -56,6 +56,9 @@ interface ClockworkContextType {
     shiftClockwork: (id: string, days: number) => void;
     installApp: () => Promise<void>;
     isInstallable: boolean;
+    showSyncDialog: boolean;
+    setShowSyncDialog: (show: boolean) => void;
+    handleSyncOption: (option: 'import' | 'merge' | 'fresh') => Promise<void>;
 }
 
 
@@ -78,6 +81,9 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
     });
     const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
     const [isInstallable, setIsInstallable] = useState(false);
+    const [showSyncDialog, setShowSyncDialog] = useState(false);
+    const [cloudData, setCloudData] = useState<Clockwork[]>([]);
+    const hasCheckedCloud = React.useRef(false);
 
     // Memoize supabase client to prevent recreation on every render
     const supabase = React.useMemo(() => createClient(), []);
@@ -91,6 +97,25 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt as EventListener);
         return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt as EventListener);
+    }, []);
+
+    // Suppress benign AbortError from Supabase auth operations
+    useEffect(() => {
+        const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+            const reason = event.reason;
+            const message = reason instanceof Error ? reason.message : typeof reason === 'string' ? reason : '';
+
+            // Check if this is the locks.js AbortError from Supabase
+            if (reason?.name === 'AbortError' ||
+                message.includes('signal is aborted') ||
+                message.includes('aborted without reason')) {
+                console.log('ℹ️ Suppressed benign AbortError from auth operation');
+                event.preventDefault(); // Prevent the error from appearing in console
+            }
+        };
+
+        window.addEventListener('unhandledrejection', handleUnhandledRejection);
+        return () => window.removeEventListener('unhandledrejection', handleUnhandledRejection);
     }, []);
 
     const installApp = async () => {
@@ -120,6 +145,14 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             }
         };
         loadTimezone();
+
+        // Check for pending sync conflict on app load
+        const pendingConflict = localStorage.getItem('syncConflictPending') === 'true';
+        if (pendingConflict) {
+            console.log('📑 Pending sync conflict detected in localStorage');
+            // We need to fetch the cloud data to populate the dialog
+            // This will be handled in the auth state change if session exists
+        }
     }, []);
 
     const requestNotificationPermission = async () => {
@@ -438,19 +471,15 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         let mounted = true;
 
-        // Consolidate initial auth check and listener
-
         const initAuth = async () => {
             console.log('🔍 Initializing Auth...');
             try {
-                // Get session first
                 const { data: { session } } = await supabase.auth.getSession();
                 if (mounted) {
                     const user = session?.user ?? null;
                     setUser(user);
                     setLoading(false);
                     if (user) {
-                        // Ensure profile exists on load
                         syncProfile(user.id);
                     }
                 }
@@ -467,11 +496,59 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             if (!mounted) return;
 
             const user = session?.user ?? null;
+
+            // Handle explicit sign out event
+            if (event === 'SIGNED_OUT') {
+                console.log('👋 User signed out, cleaning up...');
+                setUser(null);
+                setLoading(false);
+                hasCheckedCloud.current = false;
+                setShowSyncDialog(false);
+                localStorage.removeItem('syncConflictPending');
+                setCloudData([]);
+                return;
+            }
+
             setUser(user);
             setLoading(false);
 
-            if (user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED')) {
-                syncProfile(user.id);
+            if (user) {
+                console.log(`👤 User session active: ${user.email} (Event: ${event})`);
+                // If we signed in OR we are initializing a session and haven't checked cloud data yet
+                if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && !hasCheckedCloud.current)) {
+                    console.log(`🔍 Checking cloud data for user_id: ${user.id} (Reason: ${event})`);
+
+                    const { data, error } = await supabase
+                        .from('clockworks')
+                        .select('*')
+                        .eq('user_id', user.id);
+
+                    if (error) {
+                        console.error('❌ Error checking cloud data:', error.message);
+                    } else if (data && data.length > 0) {
+                        console.log(`☁️ Found ${data.length} cloud records. Opening sync dialog.`);
+                        setCloudData(data as Clockwork[]);
+                        setShowSyncDialog(true);
+                        localStorage.setItem('syncConflictPending', 'true');
+                    } else {
+                        console.log('☁️ No cloud data found for this account.');
+                        localStorage.removeItem('syncConflictPending');
+                    }
+
+                    hasCheckedCloud.current = true;
+                }
+
+                if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
+                    syncProfile(user.id);
+                }
+
+                // If user is already logged in but has a pending conflict flag
+                if (localStorage.getItem('syncConflictPending') === 'true' && !showSyncDialog && !hasCheckedCloud.current) {
+                    // This will be caught by the block above if event is SIGNED_IN or INITIAL_SESSION
+                }
+            } else {
+                console.log(`👤 No user session (Event: ${event})`);
+                hasCheckedCloud.current = false;
             }
         });
 
@@ -479,7 +556,7 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             mounted = false;
             subscription.unsubscribe();
         };
-    }, [supabase]);
+    }, [supabase, syncProfile]);
 
     const signInWithGoogle = async () => {
         console.log('🚀 Initiating Google Login...');
@@ -491,31 +568,54 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
                 }
             });
             if (error) throw error;
-        } catch (error: any) {
-            console.error('❌ Login error:', error.message);
+        } catch (error) {
+            if (error instanceof Error) {
+                console.error('❌ Login error:', error.message);
+            } else {
+                console.error('❌ Login error:', error);
+            }
         }
     };
 
     const signOut = async () => {
-        console.log('� Signing out...');
+        console.log('🔄 Signing out...');
+
+        // Immediate UI update for responsive feedback
+        // setUser(null); // Removed to prevent race conditions causing AbortError
+        setLoading(true);
+
         try {
-            // Set user to null immediately for better UX
+            // 1. First, clear the session LOCALLY to ensure UI updates immediately.
+            // This avoids the "locks.js" AbortError which happens when the network request hangs or is aborted.
+            const { error: localError } = await supabase.auth.signOut({ scope: 'local' });
+            if (localError) console.warn('Local signout warning:', localError.message);
+
+            // 2. Optimistically try to notify server (global signout), but don't await it strictly or let it block
+            // We use a fire-and-forget approach here to prevent UI freezing
+            await supabase.auth.signOut({ scope: 'global' });
+
+            // Clear any local storage remnants
+            localStorage.removeItem('lastSyncTime');
+
+        } catch (err) {
+            const error = err as Error;
+            // Check for AbortError in the catch block as well
+            if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+                console.log('ℹ️ Auth request aborted during logout');
+                await supabase.auth.signOut({ scope: 'local' }).catch(e => console.log('Local signout fallback also aborted', e));
+            } else {
+                console.error('❌ Sign out error:', err);
+            }
+        } finally {
+            // Ensure cleanup happens regardless of event firing
             setUser(null);
             setLoading(false);
+            hasCheckedCloud.current = false;
+            setShowSyncDialog(false);
+            localStorage.removeItem('syncConflictPending');
+            setCloudData([]);
+            console.log('👋 Sign out completed - UI updated');
 
-            // Perform actual sign out with timeout
-            const signOutPromise = supabase.auth.signOut();
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Sign out timeout')), 5000)
-            );
-
-            await Promise.race([signOutPromise, timeoutPromise]);
-
-            console.log('✅ Signed out successfully');
-        } catch (err) {
-            console.error('⚠️ Sign out warning/error:', err);
-            // Always ensure local state is cleared
-            setUser(null);
         }
     };
 
@@ -584,6 +684,84 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
     };
 
 
+    const handleSyncOption = async (option: 'import' | 'merge' | 'fresh') => {
+        if (!user) return;
+
+        try {
+            switch (option) {
+                case 'import':
+                    // Overwrite local data with cloud data
+                    await db.clockworks.clear();
+                    const cleanImportData = cloudData.map((item) => {
+                        const rest = { ...item } as any;
+                        delete rest.user_id;
+                        delete rest.created_at;
+                        return { ...rest, synced: true };
+                    });
+                    await db.clockworks.bulkAdd(cleanImportData);
+                    break;
+
+                case 'merge':
+                    // Merge local and cloud
+                    const localData = await db.clockworks.toArray();
+                    const mergedData: Clockwork[] = [...localData];
+
+                    for (const cloudRaw of cloudData) {
+                        const cloudItem = { ...cloudRaw } as any;
+                        delete cloudItem.user_id;
+                        delete cloudItem.created_at;
+                        const localIndex = mergedData.findIndex(
+                            l => l.name === cloudItem.name && l.frequency === cloudItem.frequency
+                        );
+
+                        if (localIndex !== -1) {
+                            // Match found: Merge
+                            const localItem = mergedData[localIndex];
+                            mergedData[localIndex] = {
+                                ...cloudItem, // Start with cloud, but local is primary for non-array
+                                ...localItem,
+                                // Array attributes: merge unique
+                                completedDates: Array.from(new Set([...(localItem.completedDates || []), ...(cloudItem.completedDates || [])])),
+                                missedDates: Array.from(new Set([...(localItem.missedDates || []), ...(cloudItem.missedDates || [])])),
+                                skippedDates: Array.from(new Set([...(localItem.skippedDates || []), ...(cloudItem.skippedDates || [])])),
+                                synced: false
+                            };
+                        } else {
+                            // No match: Add as new (could be different name or same name different frequency)
+                            mergedData.push({ ...cloudItem, synced: false });
+                        }
+                    }
+
+                    await db.clockworks.clear();
+                    await db.clockworks.bulkAdd(mergedData);
+                    break;
+
+                case 'fresh':
+                    // Remove all cloud data
+                    const { error } = await supabase
+                        .from('clockworks')
+                        .delete()
+                        .eq('user_id', user.id);
+
+                    if (error) throw error;
+                    // Mark all local items as unsynced so they get re-uploaded to the fresh cloud
+                    await db.clockworks.toCollection().modify({ synced: false });
+                    break;
+            }
+
+            setShowSyncDialog(false);
+            localStorage.removeItem('syncConflictPending');
+            setCloudData([]);
+
+            // Sync to cloud immediately after choosing option
+            await syncWithCloud();
+
+        } catch (err) {
+            console.error('Error handling sync option:', err);
+        }
+    };
+
+
 
     return (
         <ClockworkContext.Provider value={{
@@ -611,7 +789,10 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             timezone,
             updateTimezone,
             installApp,
-            isInstallable
+            isInstallable,
+            showSyncDialog,
+            setShowSyncDialog,
+            handleSyncOption
         }}>
             {children}
         </ClockworkContext.Provider>
