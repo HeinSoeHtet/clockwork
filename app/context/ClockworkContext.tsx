@@ -145,14 +145,6 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             }
         };
         loadTimezone();
-
-        // Check for pending sync conflict on app load
-        const pendingConflict = localStorage.getItem('syncConflictPending') === 'true';
-        if (pendingConflict) {
-            console.log('📑 Pending sync conflict detected in localStorage');
-            // We need to fetch the cloud data to populate the dialog
-            // This will be handled in the auth state change if session exists
-        }
     }, []);
 
     const requestNotificationPermission = async () => {
@@ -514,9 +506,11 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
             if (user) {
                 console.log(`👤 User session active: ${user.email} (Event: ${event})`);
-                // If we signed in OR we are initializing a session and haven't checked cloud data yet
-                if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && !hasCheckedCloud.current)) {
-                    console.log(`🔍 Checking cloud data for user_id: ${user.id} (Reason: ${event})`);
+
+                // Only check for cloud data and show sync dialog on manual LOGIN
+                // SIGNED_IN fires after intentional login (including OAuth redirect)
+                if (event === 'SIGNED_IN') {
+                    console.log(`🔍 Checking cloud data after manual login for user_id: ${user.id}`);
 
                     const { data, error } = await supabase
                         .from('clockworks')
@@ -540,11 +534,6 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
 
                 if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
                     syncProfile(user.id);
-                }
-
-                // If user is already logged in but has a pending conflict flag
-                if (localStorage.getItem('syncConflictPending') === 'true' && !showSyncDialog && !hasCheckedCloud.current) {
-                    // This will be caught by the block above if event is SIGNED_IN or INITIAL_SESSION
                 }
             } else {
                 console.log(`👤 No user session (Event: ${event})`);
