@@ -361,8 +361,15 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         []
     );
 
-    // Removed auto-sync trigger to allow manual sync only
-
+    // Local-first: Observe and trigger automatic sync
+    useEffect(() => {
+        if (user && hasUnsyncedChanges && !isSyncing) {
+            const timer = setTimeout(() => {
+                syncWithCloud().catch(err => console.error('Auto-sync failed:', err));
+            }, 5000); // 5s debounce for auto-sync
+            return () => clearTimeout(timer);
+        }
+    }, [user, hasUnsyncedChanges, isSyncing]);
 
     // Handle notification actions (logging/focus)
     useEffect(() => {
@@ -424,20 +431,21 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             if (unsynced.length > 0) {
                 const toSync = unsynced.map((item) => {
                     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                    const { synced, ...rest } = item;
+                    const { synced, user_id, created_at, ...rest } = item as any;
                     return { ...rest, user_id: user.id };
                 });
 
-                console.log('📤 Upserting clockworks to Supabase...');
+                console.log(`📤 Sending ${toSync.length} items to cloud...`);
                 const { error: upsertError } = await supabase
                     .from('clockworks')
                     .upsert(toSync, { onConflict: 'id' });
 
                 if (upsertError) {
-                    console.error('❌ Clockwork Upsert Error:', upsertError);
+                    console.error('❌ Clockwork Upsert Error:', upsertError.message, upsertError.details);
                     throw upsertError;
                 }
 
+                console.log('✅ Cloud write successful, updating local flags...');
                 await Promise.all(
                     unsynced.map(item => db.clockworks.update(item.id, { synced: true }))
                 );
@@ -507,10 +515,9 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             if (user) {
                 console.log(`👤 User session active: ${user.email} (Event: ${event})`);
 
-                // Only check for cloud data and show sync dialog on manual LOGIN
-                // SIGNED_IN fires after intentional login (including OAuth redirect)
-                if (event === 'SIGNED_IN') {
-                    console.log(`🔍 Checking cloud data after manual login for user_id: ${user.id}`);
+                // Handle data synchronization on Auth state changes
+                if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && !hasCheckedCloud.current)) {
+                    console.log(`🔍 Checking cloud data for user_id: ${user.id} (Reason: ${event})`);
 
                     const { data, error } = await supabase
                         .from('clockworks')
@@ -520,10 +527,29 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
                     if (error) {
                         console.error('❌ Error checking cloud data:', error.message);
                     } else if (data && data.length > 0) {
-                        console.log(`☁️ Found ${data.length} cloud records. Opening sync dialog.`);
-                        setCloudData(data as Clockwork[]);
-                        setShowSyncDialog(true);
-                        localStorage.setItem('syncConflictPending', 'true');
+                        const localCount = await db.clockworks.count();
+
+                        // Decision logic:
+                        // 1. If it's a manual login, we ALWAYS show the dialog if cloud records exist to be safe
+                        if (event === 'SIGNED_IN') {
+                            console.log(`☁️ Found ${data.length} cloud records. Opening sync dialog.`);
+                            setCloudData(data as Clockwork[]);
+                            setShowSyncDialog(true);
+                            localStorage.setItem('syncConflictPending', 'true');
+                        }
+                        // 2. If it's a background reauth (INITIAL_SESSION) and local is EMPTY, auto-import
+                        else if (localCount === 0) {
+                            console.log(`☁️ Empty local DB and found ${data.length} cloud records. Auto-importing...`);
+                            const cleanImportData = data.map((item) => {
+                                const rest = { ...item } as any;
+                                delete rest.user_id;
+                                delete rest.created_at;
+                                return { ...rest, synced: true };
+                            });
+                            await db.clockworks.bulkAdd(cleanImportData);
+                        }
+                        // 3. Otherwise (INITIAL_SESSION and local is NOT empty), we do nothing to avoid annoying dialogs
+                        // The user can still see "Unsynced changes" indicator if they differ
                     } else {
                         console.log('☁️ No cloud data found for this account.');
                         localStorage.removeItem('syncConflictPending');
@@ -609,11 +635,12 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
     };
 
 
-    const addClockwork = async (clockwork: Omit<Clockwork, 'id' | 'lastCompleted' | 'streak' | 'completedDates' | 'missedDates' | 'skippedDates' | 'synced' | 'dueDateOffset'>) => {
+    const addClockwork = useCallback(async (clockwork: Omit<Clockwork, 'id' | 'lastCompleted' | 'streak' | 'completedDates' | 'missedDates' | 'skippedDates' | 'synced' | 'dueDateOffset'>) => {
+        const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
 
         const newClockwork: Clockwork = {
             ...clockwork,
-            id: Date.now().toString(),
+            id,
             lastCompleted: null,
             streak: 0,
             completedDates: [],
@@ -623,20 +650,25 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             synced: false
         };
         await db.clockworks.add(newClockwork);
-    };
+    }, []);
 
 
-    const deleteClockwork = async (id: string) => {
+    const deleteClockwork = useCallback(async (id: string) => {
         const clockwork = await db.clockworks.get(id);
         if (clockwork && user) {
             // Delete from Cloud too
-            await supabase.from('clockworks').delete().eq('id', id);
+            try {
+                const { error } = await supabase.from('clockworks').delete().eq('id', id);
+                if (error) console.error('❌ Cloud delete failed:', error.message);
+            } catch (err) {
+                console.error('❌ Cloud delete exception:', err);
+            }
         }
         await db.clockworks.delete(id);
-    };
+    }, [user, supabase]);
 
 
-    const missClockwork = async (id: string, missDate: string) => {
+    const missClockwork = useCallback(async (id: string, missDate: string) => {
         const clockwork = await db.clockworks.get(id);
         if (!clockwork) return;
 
@@ -650,7 +682,7 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
             dueDateOffset: 0,
             synced: false
         });
-    };
+    }, [timezone]);
 
     const shiftClockwork = useCallback(async (id: string, days: number) => {
         const clockwork = await db.clockworks.get(id);
@@ -662,9 +694,9 @@ export function ClockworkProvider({ children }: { children: React.ReactNode }) {
         });
     }, []);
 
-    const updateClockwork = async (id: string, updates: Partial<Clockwork>) => {
+    const updateClockwork = useCallback(async (id: string, updates: Partial<Clockwork>) => {
         await db.clockworks.update(id, { ...updates, synced: false });
-    };
+    }, []);
 
     const updateTimezone = async (newTz: string) => {
         setTimezone(newTz);
